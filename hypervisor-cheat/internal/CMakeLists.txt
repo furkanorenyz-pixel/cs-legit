@@ -11,8 +11,40 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Options
 # ============================================
 
-option(USE_IMGUI "Build with ImGui support" OFF)
+option(USE_IMGUI "Build with ImGui support" ON)
 option(DEBUG_CONSOLE "Allocate debug console" OFF)
+
+# ============================================
+# ImGui Path
+# ============================================
+
+# Try multiple paths for ImGui
+set(IMGUI_PATHS
+    "${CMAKE_SOURCE_DIR}/../external/imgui"
+    "${CMAKE_SOURCE_DIR}/../../external/imgui"
+    "${CMAKE_SOURCE_DIR}/external/imgui"
+)
+
+set(IMGUI_DIR "")
+foreach(path ${IMGUI_PATHS})
+    if(EXISTS "${path}/imgui.h")
+        set(IMGUI_DIR "${path}")
+        message(STATUS "Found ImGui at: ${IMGUI_DIR}")
+        break()
+    endif()
+endforeach()
+
+if(USE_IMGUI AND NOT IMGUI_DIR)
+    message(STATUS "ImGui not found locally, will fetch...")
+    include(FetchContent)
+    FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG v1.90.1
+    )
+    FetchContent_MakeAvailable(imgui)
+    set(IMGUI_DIR "${imgui_SOURCE_DIR}")
+endif()
 
 # ============================================
 # Sources
@@ -33,27 +65,19 @@ set(HEADERS
 )
 
 # ============================================
-# ImGui (optional)
+# ImGui Sources
 # ============================================
 
-if(USE_IMGUI)
-    # Fetch ImGui
-    include(FetchContent)
-    FetchContent_Declare(
-        imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG v1.90.1
-    )
-    FetchContent_MakeAvailable(imgui)
+if(USE_IMGUI AND IMGUI_DIR)
+    message(STATUS "Building with ImGui from: ${IMGUI_DIR}")
     
     set(IMGUI_SOURCES
-        ${imgui_SOURCE_DIR}/imgui.cpp
-        ${imgui_SOURCE_DIR}/imgui_draw.cpp
-        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/imgui_demo.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_dx11.cpp
+        ${IMGUI_DIR}/imgui.cpp
+        ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_win32.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp
     )
     
     list(APPEND SOURCES ${IMGUI_SOURCES})
@@ -73,10 +97,10 @@ target_include_directories(hypervisor_internal PRIVATE
     ${CMAKE_SOURCE_DIR}/../common
 )
 
-if(USE_IMGUI)
+if(USE_IMGUI AND IMGUI_DIR)
     target_include_directories(hypervisor_internal PRIVATE
-        ${imgui_SOURCE_DIR}
-        ${imgui_SOURCE_DIR}/backends
+        ${IMGUI_DIR}
+        ${IMGUI_DIR}/backends
     )
     target_compile_definitions(hypervisor_internal PRIVATE HAS_IMGUI)
 endif()
@@ -107,11 +131,12 @@ endif()
 if(MSVC)
     target_compile_options(hypervisor_internal PRIVATE
         $<$<CONFIG:Release>:/O2 /Ob2 /Oi /Ot /GL /GS->
-        /W4
+        /W3
         /wd4100  # unreferenced parameter
         /wd4189  # local variable not referenced
         /wd4244  # conversion warning
         /wd4267  # size_t conversion
+        /wd4996  # deprecated
     )
     
     target_link_options(hypervisor_internal PRIVATE
@@ -130,15 +155,6 @@ set_target_properties(hypervisor_internal PROPERTIES
 )
 
 # ============================================
-# Install
-# ============================================
-
-install(TARGETS hypervisor_internal
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-)
-
-# ============================================
 # Info
 # ============================================
 
@@ -147,6 +163,7 @@ message(STATUS "╔════════════════════�
 message(STATUS "║  HYPERVISOR CHEAT - Internal DLL                              ║")
 message(STATUS "╠═══════════════════════════════════════════════════════════════╣")
 message(STATUS "║  ImGui:         ${USE_IMGUI}")
+message(STATUS "║  ImGui Path:    ${IMGUI_DIR}")
 message(STATUS "║  Debug Console: ${DEBUG_CONSOLE}")
 message(STATUS "╚═══════════════════════════════════════════════════════════════╝")
 message(STATUS "")

@@ -16,8 +16,6 @@
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 
-// ImGui headers - adjust path as needed
-// For now, we'll use conditional compilation
 #ifdef HAS_IMGUI
 #include <imgui.h>
 #include <imgui_impl_win32.h>
@@ -40,13 +38,17 @@ static bool g_initialized = false;
 static bool g_menuOpen = true;
 static std::mutex g_mutex;
 
-// Present function pointer
+// Hook data
 using PresentFn = HRESULT(WINAPI*)(IDXGISwapChain*, UINT, UINT);
 using ResizeBuffersFn = HRESULT(WINAPI*)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
 
 static PresentFn g_originalPresent = nullptr;
 static ResizeBuffersFn g_originalResizeBuffers = nullptr;
-static void* g_swapChainVTable[18] = {};
+
+// For VMT hook
+static uintptr_t* g_pSwapChainVTable = nullptr;
+static uintptr_t g_originalPresentAddr = 0;
+static uintptr_t g_originalResizeAddr = 0;
 
 // ============================================
 // Window Procedure Hook
@@ -59,13 +61,11 @@ LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
     }
 #endif
     
-    // Toggle menu
     if (msg == WM_KEYDOWN && wParam == VK_INSERT) {
         g_menuOpen = !g_menuOpen;
         return 0;
     }
     
-    // Block input when menu is open
 #ifdef HAS_IMGUI
     if (g_menuOpen && g_initialized) {
         ImGuiIO& io = ImGui::GetIO();
@@ -88,7 +88,7 @@ LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
     }
 #endif
     
-    return CallWindowProc(g_originalWndProc, hWnd, msg, wParam, lParam);
+    return CallWindowProcW(g_originalWndProc, hWnd, msg, wParam, lParam);
 }
 
 // ============================================
@@ -99,58 +99,55 @@ void RenderMenu() {
 #ifdef HAS_IMGUI
     if (!g_menuOpen) return;
     
-    ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
-    ImGui::Begin(_XS("HYPERVISOR CHEAT - Internal"), &g_menuOpen, ImGuiWindowFlags_NoCollapse);
+    ImGui::SetNextWindowSize(ImVec2(420, 520), ImGuiCond_FirstUseEver);
+    ImGui::Begin("HYPERVISOR CHEAT", &g_menuOpen, ImGuiWindowFlags_NoCollapse);
     
-    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), _XS("Ring -1 Hypervisor Internal"));
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Ring -1 Internal Cheat");
+    ImGui::Text("CS2 ESP + Menu");
     ImGui::Separator();
     
-    if (ImGui::CollapsingHeader(_XS("ESP"), ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("ESP Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto& cfg = esp::g_config;
         
-        ImGui::Checkbox(_XS("Enable ESP"), &cfg.enabled);
+        ImGui::Checkbox("Enable ESP", &cfg.enabled);
         
         if (cfg.enabled) {
             ImGui::Indent();
             
-            ImGui::Checkbox(_XS("Box"), &cfg.boxEnabled);
+            ImGui::Checkbox("Box", &cfg.boxEnabled);
             if (cfg.boxEnabled) {
-                const char* styles[] = {_XS("2D"), _XS("Corner")};
-                ImGui::Combo(_XS("Box Style"), &cfg.boxStyle, styles, 2);
-                ImGui::SliderFloat(_XS("Thickness"), &cfg.boxThickness, 1.0f, 5.0f);
+                const char* styles[] = {"2D Box", "Corner Box"};
+                ImGui::Combo("Style", &cfg.boxStyle, styles, 2);
+                ImGui::SliderFloat("Thickness", &cfg.boxThickness, 1.0f, 5.0f);
             }
             
-            ImGui::Checkbox(_XS("Health Bar"), &cfg.healthBarEnabled);
-            ImGui::Checkbox(_XS("Name"), &cfg.nameEnabled);
-            ImGui::Checkbox(_XS("Distance"), &cfg.distanceEnabled);
-            ImGui::Checkbox(_XS("Skeleton"), &cfg.skeletonEnabled);
-            ImGui::Checkbox(_XS("Head Dot"), &cfg.headDotEnabled);
-            ImGui::Checkbox(_XS("Snapline"), &cfg.snaplineEnabled);
+            ImGui::Checkbox("Health Bar", &cfg.healthBarEnabled);
+            ImGui::Checkbox("Player Name", &cfg.nameEnabled);
+            ImGui::Checkbox("Distance", &cfg.distanceEnabled);
+            ImGui::Checkbox("Skeleton", &cfg.skeletonEnabled);
+            ImGui::Checkbox("Head Dot", &cfg.headDotEnabled);
+            ImGui::Checkbox("Snaplines", &cfg.snaplineEnabled);
             
-            ImGui::SliderFloat(_XS("Max Distance"), &cfg.maxDistance, 100.0f, 1000.0f);
+            ImGui::SliderFloat("Max Distance", &cfg.maxDistance, 50.0f, 1000.0f, "%.0f m");
             
             ImGui::Unindent();
         }
     }
     
-    if (ImGui::CollapsingHeader(_XS("Colors"))) {
+    if (ImGui::CollapsingHeader("Colors")) {
         auto& cfg = esp::g_config;
         
-        ImGui::ColorEdit4(_XS("Enemy"), cfg.enemyColor);
-        ImGui::ColorEdit4(_XS("Enemy Visible"), cfg.enemyVisibleColor);
-        ImGui::ColorEdit4(_XS("Team"), cfg.teamColor);
-        ImGui::ColorEdit4(_XS("Health"), cfg.healthColor);
-        ImGui::ColorEdit4(_XS("Name"), cfg.nameColor);
-        ImGui::ColorEdit4(_XS("Skeleton"), cfg.skeletonColor);
+        ImGui::ColorEdit4("Enemy", cfg.enemyColor, ImGuiColorEditFlags_NoInputs);
+        ImGui::ColorEdit4("Enemy (Visible)", cfg.enemyVisibleColor, ImGuiColorEditFlags_NoInputs);
+        ImGui::ColorEdit4("Team", cfg.teamColor, ImGuiColorEditFlags_NoInputs);
+        ImGui::ColorEdit4("Skeleton", cfg.skeletonColor, ImGuiColorEditFlags_NoInputs);
     }
     
     ImGui::Separator();
-    ImGui::Text(_XS("Press INSERT to toggle menu"));
-    ImGui::Text(_XS("Press END to unload"));
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "INSERT - Toggle Menu");
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "END - Unload Cheat");
     
     ImGui::End();
-#else
-    // Fallback: no ImGui, just draw with GDI or skip menu
 #endif
 }
 
@@ -161,28 +158,23 @@ void RenderMenu() {
 HRESULT WINAPI HookedPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags) {
     std::lock_guard<std::mutex> lock(g_mutex);
     
-    // First time initialization
     if (!g_initialized) {
         if (SUCCEEDED(pSwapChain->GetDevice(__uuidof(ID3D11Device), (void**)&g_device))) {
             g_device->GetImmediateContext(&g_context);
             
-            // Get window
             DXGI_SWAP_CHAIN_DESC desc;
             pSwapChain->GetDesc(&desc);
             g_hwnd = desc.OutputWindow;
             
-            // Create render target
             ID3D11Texture2D* backBuffer = nullptr;
             if (SUCCEEDED(pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBuffer))) {
                 g_device->CreateRenderTargetView(backBuffer, nullptr, &g_renderTarget);
                 backBuffer->Release();
             }
             
-            // Hook WndProc
             g_originalWndProc = (WNDPROC)SetWindowLongPtrW(g_hwnd, GWLP_WNDPROC, (LONG_PTR)HookedWndProc);
             
 #ifdef HAS_IMGUI
-            // Initialize ImGui
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
             
@@ -190,84 +182,79 @@ HRESULT WINAPI HookedPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
             io.IniFilename = nullptr;
             
-            // Style
             ImGui::StyleColorsDark();
             ImGuiStyle& style = ImGui::GetStyle();
             style.WindowRounding = 8.0f;
             style.FrameRounding = 4.0f;
-            style.Colors[ImGuiCol_WindowBg] = ImVec4(0.1f, 0.1f, 0.1f, 0.95f);
-            style.Colors[ImGuiCol_TitleBg] = ImVec4(0.8f, 0.3f, 0.0f, 1.0f);
-            style.Colors[ImGuiCol_TitleBgActive] = ImVec4(1.0f, 0.4f, 0.0f, 1.0f);
-            style.Colors[ImGuiCol_Button] = ImVec4(0.8f, 0.3f, 0.0f, 1.0f);
-            style.Colors[ImGuiCol_ButtonHovered] = ImVec4(1.0f, 0.4f, 0.0f, 1.0f);
-            style.Colors[ImGuiCol_CheckMark] = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
-            style.Colors[ImGuiCol_SliderGrab] = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
+            style.GrabRounding = 4.0f;
+            style.ScrollbarRounding = 4.0f;
             
-            // Initialize backends
+            // Orange theme
+            style.Colors[ImGuiCol_WindowBg] = ImVec4(0.08f, 0.08f, 0.08f, 0.94f);
+            style.Colors[ImGuiCol_TitleBg] = ImVec4(0.6f, 0.2f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.8f, 0.3f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_Button] = ImVec4(0.6f, 0.2f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.8f, 0.3f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_ButtonActive] = ImVec4(1.0f, 0.4f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_CheckMark] = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.8f, 0.3f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_FrameBg] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
+            style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(0.3f, 0.3f, 0.3f, 1.0f);
+            style.Colors[ImGuiCol_Header] = ImVec4(0.6f, 0.2f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.8f, 0.3f, 0.0f, 1.0f);
+            style.Colors[ImGuiCol_HeaderActive] = ImVec4(1.0f, 0.4f, 0.0f, 1.0f);
+            
             ImGui_ImplWin32_Init(g_hwnd);
             ImGui_ImplDX11_Init(g_device, g_context);
 #endif
             
-            // Initialize ESP
             esp::Initialize();
-            
             g_initialized = true;
         }
     }
     
     if (g_initialized) {
-        // Update ESP data
         esp::Update();
         
 #ifdef HAS_IMGUI
-        // Start ImGui frame
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
         
-        // Render ESP
         esp::Render();
-        
-        // Render menu
         RenderMenu();
         
-        // End ImGui frame
         ImGui::Render();
-        
-        // Set render target
         g_context->OMSetRenderTargets(1, &g_renderTarget, nullptr);
-        
-        // Draw ImGui
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 #endif
     }
     
-    // Call original
     return g_originalPresent(pSwapChain, SyncInterval, Flags);
 }
 
 // ============================================
-// ResizeBuffers Hook (handle window resize)
+// ResizeBuffers Hook
 // ============================================
 
 HRESULT WINAPI HookedResizeBuffers(IDXGISwapChain* pSwapChain, UINT BufferCount, 
                                     UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT SwapChainFlags) {
     std::lock_guard<std::mutex> lock(g_mutex);
     
-    // Release render target before resize
     if (g_renderTarget) {
         g_renderTarget->Release();
         g_renderTarget = nullptr;
     }
     
 #ifdef HAS_IMGUI
-    ImGui_ImplDX11_InvalidateDeviceObjects();
+    if (g_initialized) {
+        ImGui_ImplDX11_InvalidateDeviceObjects();
+    }
 #endif
     
-    // Call original
     HRESULT hr = g_originalResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, SwapChainFlags);
     
-    // Recreate render target
     if (SUCCEEDED(hr) && g_device) {
         ID3D11Texture2D* backBuffer = nullptr;
         if (SUCCEEDED(pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBuffer))) {
@@ -276,7 +263,9 @@ HRESULT WINAPI HookedResizeBuffers(IDXGISwapChain* pSwapChain, UINT BufferCount,
         }
         
 #ifdef HAS_IMGUI
-        ImGui_ImplDX11_CreateDeviceObjects();
+        if (g_initialized) {
+            ImGui_ImplDX11_CreateDeviceObjects();
+        }
 #endif
     }
     
@@ -284,22 +273,26 @@ HRESULT WINAPI HookedResizeBuffers(IDXGISwapChain* pSwapChain, UINT BufferCount,
 }
 
 // ============================================
-// Get SwapChain VTable
+// Initialize - Get SwapChain and Hook
 // ============================================
 
-bool GetSwapChainVTable() {
-    // Create dummy window
-    WNDCLASSEXW wc = {sizeof(wc), CS_CLASSDC, DefWindowProcW, 0, 0, 
-                      GetModuleHandleW(nullptr), nullptr, nullptr, nullptr, 
-                      nullptr, L"DummyDX11", nullptr};
+bool Initialize() {
+    // Create dummy window and device to get vtable
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_CLASSDC;
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"HV_DX11";
     RegisterClassExW(&wc);
     
     HWND hwnd = CreateWindowW(wc.lpszClassName, L"", WS_OVERLAPPEDWINDOW, 
                               0, 0, 100, 100, nullptr, nullptr, wc.hInstance, nullptr);
     
-    // Create swap chain
     DXGI_SWAP_CHAIN_DESC sd = {};
     sd.BufferCount = 1;
+    sd.BufferDesc.Width = 2;
+    sd.BufferDesc.Height = 2;
     sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     sd.OutputWindow = hwnd;
@@ -324,83 +317,28 @@ bool GetSwapChainVTable() {
         return false;
     }
     
-    // Copy vtable
+    // Get vtable addresses
     void** vTable = *reinterpret_cast<void***>(swapChain);
-    memcpy(g_swapChainVTable, vTable, sizeof(g_swapChainVTable));
+    g_originalPresent = reinterpret_cast<PresentFn>(vTable[8]);
+    g_originalResizeBuffers = reinterpret_cast<ResizeBuffersFn>(vTable[13]);
     
-    // Cleanup
+    // Save for unhook
+    g_originalPresentAddr = reinterpret_cast<uintptr_t>(vTable[8]);
+    g_originalResizeAddr = reinterpret_cast<uintptr_t>(vTable[13]);
+    
+    // Cleanup dummy resources
     swapChain->Release();
     device->Release();
     context->Release();
     DestroyWindow(hwnd);
     UnregisterClassW(wc.lpszClassName, wc.hInstance);
     
-    return true;
-}
-
-// ============================================
-// MinHook-style Trampoline Hook
-// ============================================
-
-bool CreateHook(void* target, void* detour, void** original) {
-    // Simple hook using VirtualProtect
-    // For production, use MinHook or Detours
-    
-    DWORD oldProtect;
-    if (!VirtualProtect(target, 16, PAGE_EXECUTE_READWRITE, &oldProtect)) {
-        return false;
-    }
-    
-    // Save original bytes for trampoline
-    static uint8_t trampoline[64];
-    static size_t trampolineOffset = 0;
-    
-    uint8_t* trampolinePtr = trampoline + trampolineOffset;
-    trampolineOffset += 32;
-    
-    // Copy original bytes (assume 14-byte instruction for x64 jump)
-    memcpy(trampolinePtr, target, 14);
-    
-    // Add jump back
-    trampolinePtr[14] = 0xFF;
-    trampolinePtr[15] = 0x25;
-    *reinterpret_cast<uint32_t*>(trampolinePtr + 16) = 0;
-    *reinterpret_cast<uint64_t*>(trampolinePtr + 20) = reinterpret_cast<uint64_t>(target) + 14;
-    
-    // Make trampoline executable
-    DWORD temp;
-    VirtualProtect(trampolinePtr, 32, PAGE_EXECUTE_READWRITE, &temp);
-    
-    *original = trampolinePtr;
-    
-    // Write jump to detour
-    uint8_t* hook = reinterpret_cast<uint8_t*>(target);
-    hook[0] = 0xFF;
-    hook[1] = 0x25;
-    *reinterpret_cast<uint32_t*>(hook + 2) = 0;
-    *reinterpret_cast<uint64_t*>(hook + 6) = reinterpret_cast<uint64_t>(detour);
-    
-    VirtualProtect(target, 16, oldProtect, &temp);
-    
-    return true;
-}
-
-// ============================================
-// Initialize
-// ============================================
-
-bool Initialize() {
-    // Get SwapChain vtable
-    if (!GetSwapChainVTable()) {
-        return false;
-    }
-    
     // Wait for game window
     HWND gameWindow = nullptr;
-    for (int i = 0; i < 100 && !gameWindow; ++i) {
-        gameWindow = FindWindowA("SDL_app", nullptr);  // CS2 window class
+    for (int i = 0; i < 300 && !gameWindow; ++i) {
+        gameWindow = FindWindowA("SDL_app", nullptr);
         if (!gameWindow) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            Sleep(100);
         }
     }
     
@@ -408,23 +346,55 @@ bool Initialize() {
         return false;
     }
     
-    // Hook Present (index 8) and ResizeBuffers (index 13)
-    g_originalPresent = reinterpret_cast<PresentFn>(g_swapChainVTable[8]);
-    g_originalResizeBuffers = reinterpret_cast<ResizeBuffersFn>(g_swapChainVTable[13]);
+    // Use detour hooking on the function addresses
+    // This hooks ALL swapchains since we're patching the actual function
     
-    // Create hooks
-    void* originalPresent = nullptr;
-    void* originalResize = nullptr;
+    DWORD oldProtect;
     
-    if (!CreateHook(g_swapChainVTable[8], HookedPresent, &originalPresent)) {
-        return false;
-    }
-    g_originalPresent = reinterpret_cast<PresentFn>(originalPresent);
+    // Hook Present
+    VirtualProtect(reinterpret_cast<void*>(g_originalPresentAddr), 14, PAGE_EXECUTE_READWRITE, &oldProtect);
     
-    if (!CreateHook(g_swapChainVTable[13], HookedResizeBuffers, &originalResize)) {
-        return false;
-    }
-    g_originalResizeBuffers = reinterpret_cast<ResizeBuffersFn>(originalResize);
+    // Create trampoline
+    static uint8_t presentTrampoline[32];
+    memcpy(presentTrampoline, reinterpret_cast<void*>(g_originalPresentAddr), 14);
+    presentTrampoline[14] = 0xFF;
+    presentTrampoline[15] = 0x25;
+    *reinterpret_cast<uint32_t*>(presentTrampoline + 16) = 0;
+    *reinterpret_cast<uint64_t*>(presentTrampoline + 20) = g_originalPresentAddr + 14;
+    
+    DWORD temp;
+    VirtualProtect(presentTrampoline, 32, PAGE_EXECUTE_READWRITE, &temp);
+    g_originalPresent = reinterpret_cast<PresentFn>(presentTrampoline);
+    
+    // Write jump to our hook
+    uint8_t* hook = reinterpret_cast<uint8_t*>(g_originalPresentAddr);
+    hook[0] = 0xFF;
+    hook[1] = 0x25;
+    *reinterpret_cast<uint32_t*>(hook + 2) = 0;
+    *reinterpret_cast<uint64_t*>(hook + 6) = reinterpret_cast<uint64_t>(HookedPresent);
+    
+    VirtualProtect(reinterpret_cast<void*>(g_originalPresentAddr), 14, oldProtect, &temp);
+    
+    // Hook ResizeBuffers similarly
+    VirtualProtect(reinterpret_cast<void*>(g_originalResizeAddr), 14, PAGE_EXECUTE_READWRITE, &oldProtect);
+    
+    static uint8_t resizeTrampoline[32];
+    memcpy(resizeTrampoline, reinterpret_cast<void*>(g_originalResizeAddr), 14);
+    resizeTrampoline[14] = 0xFF;
+    resizeTrampoline[15] = 0x25;
+    *reinterpret_cast<uint32_t*>(resizeTrampoline + 16) = 0;
+    *reinterpret_cast<uint64_t*>(resizeTrampoline + 20) = g_originalResizeAddr + 14;
+    
+    VirtualProtect(resizeTrampoline, 32, PAGE_EXECUTE_READWRITE, &temp);
+    g_originalResizeBuffers = reinterpret_cast<ResizeBuffersFn>(resizeTrampoline);
+    
+    hook = reinterpret_cast<uint8_t*>(g_originalResizeAddr);
+    hook[0] = 0xFF;
+    hook[1] = 0x25;
+    *reinterpret_cast<uint32_t*>(hook + 2) = 0;
+    *reinterpret_cast<uint64_t*>(hook + 6) = reinterpret_cast<uint64_t>(HookedResizeBuffers);
+    
+    VirtualProtect(reinterpret_cast<void*>(g_originalResizeAddr), 14, oldProtect, &temp);
     
     return true;
 }
@@ -442,7 +412,6 @@ void Shutdown() {
     }
     
 #ifdef HAS_IMGUI
-    // Cleanup ImGui
     if (g_initialized) {
         ImGui_ImplDX11_Shutdown();
         ImGui_ImplWin32_Shutdown();
@@ -450,16 +419,16 @@ void Shutdown() {
     }
 #endif
     
-    // Release render target
     if (g_renderTarget) {
         g_renderTarget->Release();
         g_renderTarget = nullptr;
     }
     
-    // Cleanup ESP
     esp::Shutdown();
-    
     g_initialized = false;
+    
+    // Note: Unhooking detours would require restoring original bytes
+    // For clean unload, would need to save original 14 bytes
 }
 
 } // namespace hooks

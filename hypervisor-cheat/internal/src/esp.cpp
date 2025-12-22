@@ -1,11 +1,18 @@
 /**
- * HYPERVISOR CHEAT - Internal ESP Implementation
- * Direct memory reading (no syscalls - we're inside the process!)
+ * HYPERVISOR CHEAT - ESP Implementation
+ * Reads game data and renders ESP overlays
  */
 
 #include "../include/esp.hpp"
+#include "../include/memory.hpp"
+#include "../include/xorstr.hpp"
+#include "../common/offsets.h"
+
+#include <Windows.h>
+#include <vector>
+#include <string>
 #include <cmath>
-#include <algorithm>
+#include <mutex>
 
 #ifdef HAS_IMGUI
 #include <imgui.h>
@@ -14,231 +21,361 @@
 namespace esp {
 
 // ============================================
-// Globals
+// Config
 // ============================================
 
 Config g_config;
 
+// ============================================
+// Structs
+// ============================================
+
+struct Vector3 {
+    float x, y, z;
+    
+    Vector3 operator-(const Vector3& other) const {
+        return {x - other.x, y - other.y, z - other.z};
+    }
+    
+    float Length() const {
+        return std::sqrt(x*x + y*y + z*z);
+    }
+};
+
+struct Vector2 {
+    float x, y;
+};
+
+struct Matrix4x4 {
+    float m[4][4];
+};
+
+struct PlayerData {
+    Vector3 position;
+    Vector3 headPos;
+    Vector2 screenPos;
+    Vector2 screenHead;
+    int health;
+    int team;
+    std::string name;
+    bool isEnemy;
+    bool isVisible;
+    float distance;
+    bool valid;
+    
+    // Skeleton bones
+    Vector2 bones2D[28];
+    bool bonesValid;
+};
+
+// ============================================
+// Globals
+// ============================================
+
+static std::mutex g_dataMutex;
+static std::vector<PlayerData> g_players;
 static uintptr_t g_clientBase = 0;
-static uintptr_t g_engineBase = 0;
 static int g_localTeam = 0;
-static float g_viewMatrix[16] = {0};
-static std::vector<PlayerInfo> g_players;
-
-// ============================================
-// Module Helpers
-// ============================================
-
-uintptr_t GetClientBase() {
-    if (!g_clientBase) {
-        g_clientBase = reinterpret_cast<uintptr_t>(GetModuleHandleA("client.dll"));
-    }
-    return g_clientBase;
-}
-
-uintptr_t GetEngineBase() {
-    if (!g_engineBase) {
-        g_engineBase = reinterpret_cast<uintptr_t>(GetModuleHandleA("engine2.dll"));
-    }
-    return g_engineBase;
-}
+static Matrix4x4 g_viewMatrix;
+static int g_screenWidth = 1920;
+static int g_screenHeight = 1080;
 
 // ============================================
 // World to Screen
 // ============================================
 
 bool WorldToScreen(const Vector3& world, Vector2& screen) {
-    // Get window size
-    HWND hwnd = FindWindowA("SDL_app", nullptr);
-    if (!hwnd) return false;
+    const auto& m = g_viewMatrix.m;
     
-    RECT rect;
-    GetClientRect(hwnd, &rect);
-    float screenW = static_cast<float>(rect.right);
-    float screenH = static_cast<float>(rect.bottom);
-    
-    // W2S calculation
-    float w = g_viewMatrix[3] * world.x + 
-              g_viewMatrix[7] * world.y + 
-              g_viewMatrix[11] * world.z + 
-              g_viewMatrix[15];
+    float w = m[3][0] * world.x + m[3][1] * world.y + m[3][2] * world.z + m[3][3];
     
     if (w < 0.001f) return false;
     
     float invW = 1.0f / w;
     
-    float x = g_viewMatrix[0] * world.x + 
-              g_viewMatrix[4] * world.y + 
-              g_viewMatrix[8] * world.z + 
-              g_viewMatrix[12];
-    
-    float y = g_viewMatrix[1] * world.x + 
-              g_viewMatrix[5] * world.y + 
-              g_viewMatrix[9] * world.z + 
-              g_viewMatrix[13];
+    float x = m[0][0] * world.x + m[0][1] * world.y + m[0][2] * world.z + m[0][3];
+    float y = m[1][0] * world.x + m[1][1] * world.y + m[1][2] * world.z + m[1][3];
     
     x *= invW;
     y *= invW;
     
-    screen.x = (screenW / 2.0f) * (1.0f + x);
-    screen.y = (screenH / 2.0f) * (1.0f - y);
+    screen.x = (g_screenWidth / 2.0f) * (1.0f + x);
+    screen.y = (g_screenHeight / 2.0f) * (1.0f - y);
     
     return true;
 }
 
 // ============================================
-// Initialize / Shutdown
+// Read Player Data
 // ============================================
 
-void Initialize() {
-    g_players.reserve(64);
-}
-
-void Shutdown() {
-    g_players.clear();
+bool ReadPlayerData(uintptr_t controller, uintptr_t entityList, PlayerData& data) {
+    data.valid = false;
+    
+    // Read player pawn handle
+    uint32_t pawnHandle = memory::Read<uint32_t>(controller + offsets::entity::m_hPlayerPawn);
+    if (!pawnHandle) return false;
+    
+    // Get pawn from entity list
+    uintptr_t listEntry = memory::Read<uintptr_t>(entityList + 0x8 * ((pawnHandle & 0x7FFF) >> 9) + 0x10);
+    if (!listEntry) return false;
+    
+    uintptr_t pawn = memory::Read<uintptr_t>(listEntry + 0x78 * (pawnHandle & 0x1FF));
+    if (!pawn) return false;
+    
+    // Check if alive
+    int health = memory::Read<int>(pawn + offsets::entity::m_iHealth);
+    if (health <= 0 || health > 100) return false;
+    
+    data.health = health;
+    
+    // Team
+    data.team = memory::Read<int>(pawn + offsets::entity::m_iTeamNum);
+    data.isEnemy = (data.team != g_localTeam);
+    
+    // Name
+    char nameBuffer[128] = {};
+    uintptr_t namePtr = memory::Read<uintptr_t>(controller + offsets::entity::m_sSanitizedPlayerName);
+    if (namePtr) {
+        memory::ReadBuffer(namePtr, nameBuffer, 127);
+        data.name = nameBuffer;
+    }
+    
+    // Position from game scene node
+    uintptr_t sceneNode = memory::Read<uintptr_t>(pawn + offsets::entity::m_pGameSceneNode);
+    if (!sceneNode) return false;
+    
+    data.position = memory::Read<Vector3>(sceneNode + offsets::scene::m_vecAbsOrigin);
+    
+    // Head position (approximate - bone offset)
+    data.headPos = data.position;
+    data.headPos.z += 75.0f; // Head height offset
+    
+    // Visibility check
+    uintptr_t spottedState = pawn + offsets::player::m_entitySpottedState;
+    data.isVisible = memory::Read<bool>(spottedState + offsets::player::m_bSpotted);
+    
+    // Read skeleton bones
+    data.bonesValid = false;
+    uintptr_t boneMatrix = memory::Read<uintptr_t>(sceneNode + offsets::skeleton::m_modelState + offsets::skeleton::m_boneArray);
+    if (boneMatrix) {
+        // Read bone positions
+        struct BoneData { float x, y, z, w; };
+        
+        BoneData bones[28];
+        if (memory::ReadBuffer(boneMatrix, bones, sizeof(bones))) {
+            // Head bone for accurate head position
+            data.headPos = {bones[offsets::bones::head].x, bones[offsets::bones::head].y, bones[offsets::bones::head].z};
+            
+            // Convert bones to screen
+            bool anyValid = false;
+            for (int i = 0; i < 28; ++i) {
+                Vector3 boneWorld = {bones[i].x, bones[i].y, bones[i].z};
+                if (WorldToScreen(boneWorld, data.bones2D[i])) {
+                    anyValid = true;
+                }
+            }
+            data.bonesValid = anyValid;
+        }
+    }
+    
+    // Screen conversion
+    if (!WorldToScreen(data.position, data.screenPos)) return false;
+    if (!WorldToScreen(data.headPos, data.screenHead)) return false;
+    
+    // Distance
+    Vector3 localPos = memory::Read<Vector3>(g_clientBase + offsets::client_dll::dwLocalPlayerPawn);
+    data.distance = (data.position - localPos).Length() / 100.0f; // To meters
+    
+    data.valid = true;
+    return true;
 }
 
 // ============================================
-// Update (Read Game Data)
+// Update
 // ============================================
 
 void Update() {
     if (!g_config.enabled) return;
     
-    g_players.clear();
+    if (!g_clientBase) {
+        g_clientBase = memory::GetModuleBase(xorstr_("client.dll"));
+        if (!g_clientBase) return;
+    }
     
-    uintptr_t client = GetClientBase();
-    if (!client) return;
+    // Get screen size
+#ifdef HAS_IMGUI
+    ImGuiIO& io = ImGui::GetIO();
+    g_screenWidth = static_cast<int>(io.DisplaySize.x);
+    g_screenHeight = static_cast<int>(io.DisplaySize.y);
+#endif
     
     // Read view matrix
-    uintptr_t viewMatrixAddr = client + offsets::client::dwViewMatrix;
-    for (int i = 0; i < 16; i++) {
-        g_viewMatrix[i] = Read<float>(viewMatrixAddr + i * 4);
+    g_viewMatrix = memory::Read<Matrix4x4>(g_clientBase + offsets::client_dll::dwViewMatrix);
+    
+    // Get local player
+    uintptr_t localController = memory::Read<uintptr_t>(g_clientBase + offsets::client_dll::dwLocalPlayerController);
+    if (localController) {
+        g_localTeam = memory::Read<int>(localController + offsets::entity::m_iTeamNum);
     }
     
-    // Read local player controller
-    uintptr_t localController = Read<uintptr_t>(client + offsets::client::dwLocalPlayerController);
-    if (!localController) return;
-    
-    // Get local team
-    uintptr_t localPawn = Read<uintptr_t>(client + offsets::client::dwLocalPlayerPawn);
-    if (localPawn) {
-        g_localTeam = Read<uint8_t>(localPawn + offsets::entity::m_iTeamNum);
-    }
-    
-    // Get local position for distance
-    Vector3 localPos = {0, 0, 0};
-    if (localPawn) {
-        uintptr_t sceneNode = Read<uintptr_t>(localPawn + offsets::entity::m_pGameSceneNode);
-        if (sceneNode) {
-            localPos = Read<Vector3>(sceneNode + offsets::scene::m_vecAbsOrigin);
-        }
-    }
-    
-    // Read entity list
-    uintptr_t entityList = Read<uintptr_t>(client + offsets::client::dwEntityList);
+    // Get entity list
+    uintptr_t entityList = memory::Read<uintptr_t>(g_clientBase + offsets::client_dll::dwEntityList);
     if (!entityList) return;
     
-    // Iterate players
-    for (int i = 1; i <= 64; i++) {
-        // Get list entry
-        uintptr_t listEntry = Read<uintptr_t>(entityList + (8 * ((i & 0x7FFF) >> 9)) + 16);
+    std::vector<PlayerData> newPlayers;
+    newPlayers.reserve(64);
+    
+    // Iterate through entities
+    for (int i = 1; i < 64; ++i) {
+        uintptr_t listEntry = memory::Read<uintptr_t>(entityList + (0x8 * (i & 0x7FFF) >> 9) + 0x10);
         if (!listEntry) continue;
         
-        // Get controller
-        uintptr_t controller = Read<uintptr_t>(listEntry + 120 * (i & 0x1FF));
-        if (!controller || controller == localController) continue;
+        uintptr_t controller = memory::Read<uintptr_t>(listEntry + 0x78 * (i & 0x1FF));
+        if (!controller) continue;
         
-        // Check alive
-        bool isAlive = Read<uint8_t>(controller + offsets::controller::m_bPawnIsAlive);
-        if (!isAlive) continue;
-        
-        // Get pawn handle
-        uint32_t pawnHandle = Read<uint32_t>(controller + offsets::controller::m_hPlayerPawn);
-        if (!pawnHandle) continue;
-        
-        // Get pawn list entry
-        uintptr_t pawnListEntry = Read<uintptr_t>(entityList + (8 * ((pawnHandle & 0x7FFF) >> 9)) + 16);
-        if (!pawnListEntry) continue;
-        
-        // Get pawn
-        uintptr_t pawn = Read<uintptr_t>(pawnListEntry + 120 * (pawnHandle & 0x1FF));
-        if (!pawn) continue;
-        
-        PlayerInfo player = {};
-        player.index = i;
-        player.alive = true;
-        
-        // Health
-        player.health = Read<int>(pawn + offsets::entity::m_iHealth);
-        if (player.health <= 0 || player.health > 100) continue;
-        
-        // Team
-        player.team = Read<uint8_t>(pawn + offsets::entity::m_iTeamNum);
-        player.enemy = (player.team != g_localTeam);
-        
-        // Position
-        uintptr_t sceneNode = Read<uintptr_t>(pawn + offsets::entity::m_pGameSceneNode);
-        if (!sceneNode) continue;
-        
-        player.position = Read<Vector3>(sceneNode + offsets::scene::m_vecAbsOrigin);
-        
-        // Head position (approximate)
-        player.headPosition = player.position;
-        player.headPosition.z += 72.0f;
-        
-        // Try to get bones
-        uintptr_t skeletonInstance = Read<uintptr_t>(sceneNode + offsets::skeleton::m_modelState);
-        if (skeletonInstance) {
-            uintptr_t boneArray = Read<uintptr_t>(skeletonInstance + offsets::skeleton::m_boneArray);
-            if (boneArray) {
-                // Read head bone
-                Vector3 headBone = Read<Vector3>(boneArray + offsets::bones::head * 32);
-                if (headBone.x != 0 || headBone.y != 0 || headBone.z != 0) {
-                    player.headPosition = headBone;
-                }
-                
-                // Read all bones for skeleton
-                if (g_config.skeletonEnabled) {
-                    for (int b = 0; b < 28; b++) {
-                        player.bones[b] = Read<Vector3>(boneArray + b * 32);
-                    }
+        PlayerData player;
+        if (ReadPlayerData(controller, entityList, player)) {
+            if (player.isEnemy || !g_config.teamCheck) {
+                if (player.distance <= g_config.maxDistance) {
+                    newPlayers.push_back(std::move(player));
                 }
             }
         }
-        
-        // Name
-        uintptr_t namePtr = Read<uintptr_t>(controller + offsets::controller::m_sSanitizedPlayerName);
-        if (namePtr) {
-            char nameBuffer[32] = {};
-            for (int j = 0; j < 31; j++) {
-                nameBuffer[j] = Read<char>(namePtr + j);
-                if (nameBuffer[j] == 0) break;
-            }
-            player.name = nameBuffer;
-        }
-        
-        // Distance
-        player.distance = (localPos - player.position).Length() / 100.0f;
-        if (player.distance > g_config.maxDistance) continue;
-        
-        // Visibility (spotted)
-        uintptr_t spottedState = pawn + offsets::player::m_entitySpottedState;
-        player.visible = Read<uint8_t>(spottedState + offsets::player::m_bSpotted);
-        
-        // World to screen
-        player.onScreen = WorldToScreen(player.position, player.screenPos);
-        
-        Vector2 headScreen;
-        if (WorldToScreen(player.headPosition, headScreen)) {
-            player.screenHead = headScreen;
-            player.screenHeight = player.screenPos.y - headScreen.y;
-            player.screenWidth = player.screenHeight / 2.4f;
-        }
-        
-        g_players.push_back(player);
     }
+    
+    std::lock_guard<std::mutex> lock(g_dataMutex);
+    g_players = std::move(newPlayers);
 }
+
+// ============================================
+// Drawing Helpers
+// ============================================
+
+#ifdef HAS_IMGUI
+
+ImU32 ToImColor(const float* color) {
+    return IM_COL32(
+        static_cast<int>(color[0] * 255),
+        static_cast<int>(color[1] * 255),
+        static_cast<int>(color[2] * 255),
+        static_cast<int>(color[3] * 255)
+    );
+}
+
+void DrawBox2D(ImDrawList* draw, const PlayerData& player, ImU32 color) {
+    float height = std::abs(player.screenPos.y - player.screenHead.y);
+    float width = height * 0.4f;
+    
+    float x = player.screenHead.x - width / 2;
+    float y = player.screenHead.y;
+    
+    draw->AddRect(
+        ImVec2(x, y),
+        ImVec2(x + width, y + height),
+        color,
+        0.0f,
+        0,
+        g_config.boxThickness
+    );
+}
+
+void DrawBoxCorner(ImDrawList* draw, const PlayerData& player, ImU32 color) {
+    float height = std::abs(player.screenPos.y - player.screenHead.y);
+    float width = height * 0.4f;
+    
+    float x = player.screenHead.x - width / 2;
+    float y = player.screenHead.y;
+    float cornerLen = height * 0.2f;
+    
+    // Top Left
+    draw->AddLine(ImVec2(x, y), ImVec2(x + cornerLen, y), color, g_config.boxThickness);
+    draw->AddLine(ImVec2(x, y), ImVec2(x, y + cornerLen), color, g_config.boxThickness);
+    
+    // Top Right
+    draw->AddLine(ImVec2(x + width, y), ImVec2(x + width - cornerLen, y), color, g_config.boxThickness);
+    draw->AddLine(ImVec2(x + width, y), ImVec2(x + width, y + cornerLen), color, g_config.boxThickness);
+    
+    // Bottom Left
+    draw->AddLine(ImVec2(x, y + height), ImVec2(x + cornerLen, y + height), color, g_config.boxThickness);
+    draw->AddLine(ImVec2(x, y + height), ImVec2(x, y + height - cornerLen), color, g_config.boxThickness);
+    
+    // Bottom Right
+    draw->AddLine(ImVec2(x + width, y + height), ImVec2(x + width - cornerLen, y + height), color, g_config.boxThickness);
+    draw->AddLine(ImVec2(x + width, y + height), ImVec2(x + width, y + height - cornerLen), color, g_config.boxThickness);
+}
+
+void DrawHealthBar(ImDrawList* draw, const PlayerData& player) {
+    float height = std::abs(player.screenPos.y - player.screenHead.y);
+    float width = height * 0.4f;
+    
+    float x = player.screenHead.x - width / 2 - 5;
+    float y = player.screenHead.y;
+    
+    float healthPct = player.health / 100.0f;
+    float barHeight = height * healthPct;
+    
+    // Background
+    draw->AddRectFilled(
+        ImVec2(x - 2, y),
+        ImVec2(x, y + height),
+        IM_COL32(0, 0, 0, 180)
+    );
+    
+    // Health color gradient
+    int r = static_cast<int>((1.0f - healthPct) * 255);
+    int g = static_cast<int>(healthPct * 255);
+    ImU32 healthColor = IM_COL32(r, g, 0, 255);
+    
+    draw->AddRectFilled(
+        ImVec2(x - 2, y + height - barHeight),
+        ImVec2(x, y + height),
+        healthColor
+    );
+}
+
+void DrawSkeleton(ImDrawList* draw, const PlayerData& player, ImU32 color) {
+    if (!player.bonesValid) return;
+    
+    auto drawBone = [&](int from, int to) {
+        draw->AddLine(
+            ImVec2(player.bones2D[from].x, player.bones2D[from].y),
+            ImVec2(player.bones2D[to].x, player.bones2D[to].y),
+            color,
+            1.5f
+        );
+    };
+    
+    using namespace offsets::bones;
+    
+    // Spine
+    drawBone(head, neck);
+    drawBone(neck, spine_2);
+    drawBone(spine_2, spine_1);
+    drawBone(spine_1, pelvis);
+    
+    // Left arm
+    drawBone(neck, left_shoulder);
+    drawBone(left_shoulder, left_elbow);
+    drawBone(left_elbow, left_hand);
+    
+    // Right arm
+    drawBone(neck, right_shoulder);
+    drawBone(right_shoulder, right_elbow);
+    drawBone(right_elbow, right_hand);
+    
+    // Left leg
+    drawBone(pelvis, left_hip);
+    drawBone(left_hip, left_knee);
+    drawBone(left_knee, left_foot);
+    
+    // Right leg
+    drawBone(pelvis, right_hip);
+    drawBone(right_hip, right_knee);
+    drawBone(right_knee, right_foot);
+}
+
+#endif // HAS_IMGUI
 
 // ============================================
 // Render
@@ -251,203 +388,116 @@ void Render() {
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
     if (!draw) return;
     
+    std::lock_guard<std::mutex> lock(g_dataMutex);
+    
     for (const auto& player : g_players) {
-        if (!player.onScreen) continue;
+        if (!player.valid) continue;
         
-        // Choose color
-        ImU32 color;
-        if (player.enemy) {
-            if (player.visible) {
-                color = IM_COL32(
-                    static_cast<int>(g_config.enemyVisibleColor[0] * 255),
-                    static_cast<int>(g_config.enemyVisibleColor[1] * 255),
-                    static_cast<int>(g_config.enemyVisibleColor[2] * 255),
-                    static_cast<int>(g_config.enemyVisibleColor[3] * 255)
-                );
-            } else {
-                color = IM_COL32(
-                    static_cast<int>(g_config.enemyColor[0] * 255),
-                    static_cast<int>(g_config.enemyColor[1] * 255),
-                    static_cast<int>(g_config.enemyColor[2] * 255),
-                    static_cast<int>(g_config.enemyColor[3] * 255)
-                );
-            }
-        } else {
-            color = IM_COL32(
-                static_cast<int>(g_config.teamColor[0] * 255),
-                static_cast<int>(g_config.teamColor[1] * 255),
-                static_cast<int>(g_config.teamColor[2] * 255),
-                static_cast<int>(g_config.teamColor[3] * 255)
-            );
-        }
+        ImU32 color = player.isVisible ? 
+            ToImColor(g_config.enemyVisibleColor) : 
+            ToImColor(g_config.enemyColor);
         
-        float x = player.screenHead.x - player.screenWidth / 2;
-        float y = player.screenHead.y;
-        float w = player.screenWidth;
-        float h = player.screenHeight;
-        
-        // Box
+        // Box ESP
         if (g_config.boxEnabled) {
             if (g_config.boxStyle == 0) {
-                // 2D Box
-                draw->AddRect(
-                    ImVec2(x, y),
-                    ImVec2(x + w, y + h),
-                    color,
-                    0.0f,
-                    0,
-                    g_config.boxThickness
-                );
+                DrawBox2D(draw, player, color);
             } else {
-                // Corner Box
-                float cornerLen = w / 4;
-                
-                // Top left
-                draw->AddLine(ImVec2(x, y), ImVec2(x + cornerLen, y), color, g_config.boxThickness);
-                draw->AddLine(ImVec2(x, y), ImVec2(x, y + cornerLen), color, g_config.boxThickness);
-                
-                // Top right
-                draw->AddLine(ImVec2(x + w, y), ImVec2(x + w - cornerLen, y), color, g_config.boxThickness);
-                draw->AddLine(ImVec2(x + w, y), ImVec2(x + w, y + cornerLen), color, g_config.boxThickness);
-                
-                // Bottom left
-                draw->AddLine(ImVec2(x, y + h), ImVec2(x + cornerLen, y + h), color, g_config.boxThickness);
-                draw->AddLine(ImVec2(x, y + h), ImVec2(x, y + h - cornerLen), color, g_config.boxThickness);
-                
-                // Bottom right
-                draw->AddLine(ImVec2(x + w, y + h), ImVec2(x + w - cornerLen, y + h), color, g_config.boxThickness);
-                draw->AddLine(ImVec2(x + w, y + h), ImVec2(x + w, y + h - cornerLen), color, g_config.boxThickness);
+                DrawBoxCorner(draw, player, color);
             }
         }
         
         // Health bar
         if (g_config.healthBarEnabled) {
-            float barX = x - 6;
-            float barW = 4;
-            float healthPercent = player.health / 100.0f;
-            float barH = h * healthPercent;
-            float barY = y + h - barH;
-            
-            // Background
-            draw->AddRectFilled(
-                ImVec2(barX - 1, y - 1),
-                ImVec2(barX + barW + 1, y + h + 1),
-                IM_COL32(0, 0, 0, 180)
-            );
-            
-            // Health color gradient
-            ImU32 healthColor;
-            if (healthPercent > 0.5f) {
-                float t = (healthPercent - 0.5f) * 2;
-                healthColor = IM_COL32(static_cast<int>((1.0f - t) * 255), 255, 0, 255);
-            } else {
-                float t = healthPercent * 2;
-                healthColor = IM_COL32(255, static_cast<int>(t * 255), 0, 255);
-            }
-            
-            draw->AddRectFilled(
-                ImVec2(barX, barY),
-                ImVec2(barX + barW, y + h),
-                healthColor
-            );
+            DrawHealthBar(draw, player);
         }
         
-        // Name
-        if (g_config.nameEnabled && !player.name.empty()) {
-            ImVec2 textSize = ImGui::CalcTextSize(player.name.c_str());
-            float textX = player.screenHead.x - textSize.x / 2;
-            float textY = y - textSize.y - 2;
-            
-            // Shadow
-            draw->AddText(ImVec2(textX + 1, textY + 1), IM_COL32(0, 0, 0, 255), player.name.c_str());
-            // Text
-            draw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), player.name.c_str());
-        }
-        
-        // Distance
-        if (g_config.distanceEnabled) {
-            char distText[16];
-            snprintf(distText, sizeof(distText), "%.0fm", player.distance);
-            
-            ImVec2 textSize = ImGui::CalcTextSize(distText);
-            float textX = player.screenPos.x - textSize.x / 2;
-            float textY = y + h + 2;
-            
-            draw->AddText(ImVec2(textX + 1, textY + 1), IM_COL32(0, 0, 0, 255), distText);
-            draw->AddText(ImVec2(textX, textY), IM_COL32(255, 255, 255, 255), distText);
+        // Skeleton
+        if (g_config.skeletonEnabled) {
+            DrawSkeleton(draw, player, ToImColor(g_config.skeletonColor));
         }
         
         // Head dot
         if (g_config.headDotEnabled) {
             draw->AddCircleFilled(
                 ImVec2(player.screenHead.x, player.screenHead.y),
-                3.0f,
+                4.0f,
                 color
             );
         }
         
-        // Snapline
+        // Snaplines
         if (g_config.snaplineEnabled) {
-            HWND hwnd = FindWindowA("SDL_app", nullptr);
-            RECT rect;
-            GetClientRect(hwnd, &rect);
-            
             draw->AddLine(
-                ImVec2(rect.right / 2.0f, static_cast<float>(rect.bottom)),
+                ImVec2(static_cast<float>(g_screenWidth) / 2, static_cast<float>(g_screenHeight)),
                 ImVec2(player.screenPos.x, player.screenPos.y),
-                color,
+                IM_COL32(255, 255, 255, 100),
                 1.0f
             );
         }
         
-        // Skeleton
-        if (g_config.skeletonEnabled) {
-            ImU32 skelColor = IM_COL32(
-                static_cast<int>(g_config.skeletonColor[0] * 255),
-                static_cast<int>(g_config.skeletonColor[1] * 255),
-                static_cast<int>(g_config.skeletonColor[2] * 255),
-                static_cast<int>(g_config.skeletonColor[3] * 255)
+        // Text info
+        float textY = player.screenHead.y - 15;
+        float height = std::abs(player.screenPos.y - player.screenHead.y);
+        float width = height * 0.4f;
+        float textX = player.screenHead.x - width / 2;
+        
+        // Name
+        if (g_config.nameEnabled && !player.name.empty()) {
+            draw->AddText(
+                ImVec2(textX, textY),
+                IM_COL32(255, 255, 255, 255),
+                player.name.c_str()
             );
-            
-            // Bone connections
-            int connections[][2] = {
-                {offsets::bones::head, offsets::bones::neck},
-                {offsets::bones::neck, offsets::bones::spine_2},
-                {offsets::bones::spine_2, offsets::bones::spine_1},
-                {offsets::bones::spine_1, offsets::bones::pelvis},
-                {offsets::bones::neck, offsets::bones::left_shoulder},
-                {offsets::bones::left_shoulder, offsets::bones::left_elbow},
-                {offsets::bones::left_elbow, offsets::bones::left_hand},
-                {offsets::bones::neck, offsets::bones::right_shoulder},
-                {offsets::bones::right_shoulder, offsets::bones::right_elbow},
-                {offsets::bones::right_elbow, offsets::bones::right_hand},
-                {offsets::bones::pelvis, offsets::bones::left_hip},
-                {offsets::bones::left_hip, offsets::bones::left_knee},
-                {offsets::bones::left_knee, offsets::bones::left_foot},
-                {offsets::bones::pelvis, offsets::bones::right_hip},
-                {offsets::bones::right_hip, offsets::bones::right_knee},
-                {offsets::bones::right_knee, offsets::bones::right_foot},
-            };
-            
-            for (auto& conn : connections) {
-                Vector2 screen1, screen2;
-                if (WorldToScreen(player.bones[conn[0]], screen1) &&
-                    WorldToScreen(player.bones[conn[1]], screen2)) {
-                    draw->AddLine(
-                        ImVec2(screen1.x, screen1.y),
-                        ImVec2(screen2.x, screen2.y),
-                        skelColor,
-                        1.5f
-                    );
-                }
-            }
+            textY -= 12;
+        }
+        
+        // Distance
+        if (g_config.distanceEnabled) {
+            char distText[32];
+            snprintf(distText, sizeof(distText), "%.0fm", player.distance);
+            draw->AddText(
+                ImVec2(textX, player.screenPos.y + 2),
+                IM_COL32(255, 255, 255, 200),
+                distText
+            );
         }
     }
-#else
-    // No ImGui - rendering requires HAS_IMGUI
-    (void)g_players;
+    
+    // Draw info
+    char infoText[64];
+    snprintf(infoText, sizeof(infoText), "[HV] Players: %zu", g_players.size());
+    draw->AddText(ImVec2(10, 10), IM_COL32(255, 165, 0, 255), infoText);
 #endif
 }
 
-} // namespace esp
+// ============================================
+// Initialize / Shutdown
+// ============================================
 
+void Initialize() {
+    g_config.enabled = true;
+    g_config.boxEnabled = true;
+    g_config.healthBarEnabled = true;
+    g_config.nameEnabled = true;
+    g_config.distanceEnabled = true;
+    g_config.skeletonEnabled = false;
+    g_config.headDotEnabled = true;
+    g_config.snaplineEnabled = false;
+    g_config.teamCheck = true;
+    g_config.boxStyle = 1; // Corner box
+    g_config.boxThickness = 1.5f;
+    g_config.maxDistance = 500.0f;
+    
+    // Colors
+    g_config.enemyColor[0] = 1.0f; g_config.enemyColor[1] = 0.3f; g_config.enemyColor[2] = 0.3f; g_config.enemyColor[3] = 1.0f;
+    g_config.enemyVisibleColor[0] = 0.3f; g_config.enemyVisibleColor[1] = 1.0f; g_config.enemyVisibleColor[2] = 0.3f; g_config.enemyVisibleColor[3] = 1.0f;
+    g_config.teamColor[0] = 0.3f; g_config.teamColor[1] = 0.5f; g_config.teamColor[2] = 1.0f; g_config.teamColor[3] = 1.0f;
+    g_config.skeletonColor[0] = 1.0f; g_config.skeletonColor[1] = 1.0f; g_config.skeletonColor[2] = 1.0f; g_config.skeletonColor[3] = 0.8f;
+}
+
+void Shutdown() {
+    std::lock_guard<std::mutex> lock(g_dataMutex);
+    g_players.clear();
+}
+
+} // namespace esp

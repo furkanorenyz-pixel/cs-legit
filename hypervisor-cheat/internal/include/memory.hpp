@@ -1,6 +1,6 @@
 /**
- * HYPERVISOR CHEAT - Internal Memory Utilities
- * Pattern scanning, module helpers
+ * HYPERVISOR CHEAT - Memory Utilities
+ * Internal memory read/write for injected DLL
  */
 
 #pragma once
@@ -13,103 +13,53 @@
 
 #pragma comment(lib, "psapi.lib")
 
-namespace mem {
+namespace memory {
 
 // ============================================
-// Module Info
+// Module Base
 // ============================================
 
-struct ModuleInfo {
-    uintptr_t base;
-    size_t size;
-    std::string name;
-};
-
-inline ModuleInfo GetModule(const char* moduleName) {
-    ModuleInfo info = {};
+inline uintptr_t GetModuleBase(const char* moduleName) {
+    static HMODULE cachedModule = nullptr;
+    static std::string cachedName;
     
-    HMODULE hMod = GetModuleHandleA(moduleName);
-    if (!hMod) return info;
-    
-    MODULEINFO modInfo = {};
-    if (GetModuleInformation(GetCurrentProcess(), hMod, &modInfo, sizeof(modInfo))) {
-        info.base = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
-        info.size = modInfo.SizeOfImage;
-        info.name = moduleName;
+    if (cachedName == moduleName && cachedModule) {
+        return reinterpret_cast<uintptr_t>(cachedModule);
     }
     
-    return info;
+    HMODULE hModule = GetModuleHandleA(moduleName);
+    if (hModule) {
+        cachedModule = hModule;
+        cachedName = moduleName;
+    }
+    return reinterpret_cast<uintptr_t>(hModule);
 }
 
-// ============================================
-// Pattern Scanning
-// ============================================
-
-inline std::vector<int> PatternToBytes(const char* pattern) {
-    std::vector<int> bytes;
-    const char* start = pattern;
-    const char* end = pattern + strlen(pattern);
-    
-    for (const char* current = start; current < end; ++current) {
-        if (*current == '?') {
-            ++current;
-            if (*current == '?') ++current;
-            bytes.push_back(-1);
-        } else {
-            bytes.push_back(strtoul(current, const_cast<char**>(&current), 16));
-        }
+inline size_t GetModuleSize(HMODULE hModule) {
+    MODULEINFO info = {};
+    if (GetModuleInformation(GetCurrentProcess(), hModule, &info, sizeof(info))) {
+        return info.SizeOfImage;
     }
-    
-    return bytes;
-}
-
-inline uintptr_t FindPattern(uintptr_t start, size_t size, const char* pattern) {
-    auto bytes = PatternToBytes(pattern);
-    auto scanBytes = reinterpret_cast<uint8_t*>(start);
-    auto patternSize = bytes.size();
-    auto patternData = bytes.data();
-    
-    for (size_t i = 0; i < size - patternSize; ++i) {
-        bool found = true;
-        
-        for (size_t j = 0; j < patternSize; ++j) {
-            if (patternData[j] != -1 && scanBytes[i + j] != patternData[j]) {
-                found = false;
-                break;
-            }
-        }
-        
-        if (found) {
-            return start + i;
-        }
-    }
-    
     return 0;
 }
 
-inline uintptr_t FindPattern(const char* moduleName, const char* pattern) {
-    auto mod = GetModule(moduleName);
-    if (!mod.base) return 0;
-    return FindPattern(mod.base, mod.size, pattern);
+// ============================================
+// Safe Memory Read
+// ============================================
+
+inline bool IsValidPtr(uintptr_t address) {
+    if (address < 0x10000 || address > 0x7FFFFFFFFFFF) {
+        return false;
+    }
+    return true;
 }
 
-// ============================================
-// Relative Address Resolution
-// ============================================
-
-inline uintptr_t GetAbsoluteAddress(uintptr_t instruction, int offset, int size) {
-    if (!instruction) return 0;
-    int relative = *reinterpret_cast<int*>(instruction + offset);
-    return instruction + size + relative;
-}
-
-// ============================================
-// Safe Memory Operations
-// ============================================
-
-template<typename T>
+template <typename T>
 inline T Read(uintptr_t address) {
-    if (!address) return T{};
+    if (!IsValidPtr(address)) {
+        return T{};
+    }
+    
     __try {
         return *reinterpret_cast<T*>(address);
     }
@@ -118,9 +68,12 @@ inline T Read(uintptr_t address) {
     }
 }
 
-template<typename T>
+template <typename T>
 inline bool Write(uintptr_t address, const T& value) {
-    if (!address) return false;
+    if (!IsValidPtr(address)) {
+        return false;
+    }
+    
     __try {
         *reinterpret_cast<T*>(address) = value;
         return true;
@@ -131,7 +84,10 @@ inline bool Write(uintptr_t address, const T& value) {
 }
 
 inline bool ReadBuffer(uintptr_t address, void* buffer, size_t size) {
-    if (!address || !buffer) return false;
+    if (!IsValidPtr(address) || !buffer || size == 0) {
+        return false;
+    }
+    
     __try {
         memcpy(buffer, reinterpret_cast<void*>(address), size);
         return true;
@@ -142,26 +98,102 @@ inline bool ReadBuffer(uintptr_t address, void* buffer, size_t size) {
 }
 
 // ============================================
-// Virtual Protect Helper
+// Pattern Scanning
 // ============================================
 
-class ScopedVirtualProtect {
-public:
-    ScopedVirtualProtect(void* address, size_t size, DWORD newProtect)
-        : m_address(address), m_size(size), m_oldProtect(0) {
-        VirtualProtect(m_address, m_size, newProtect, &m_oldProtect);
+inline uintptr_t FindPattern(uintptr_t start, size_t size, const char* pattern, const char* mask) {
+    size_t patternLen = strlen(mask);
+    
+    for (size_t i = 0; i <= size - patternLen; ++i) {
+        bool found = true;
+        for (size_t j = 0; j < patternLen; ++j) {
+            if (mask[j] == 'x' && 
+                *reinterpret_cast<uint8_t*>(start + i + j) != static_cast<uint8_t>(pattern[j])) {
+                found = false;
+                break;
+            }
+        }
+        if (found) {
+            return start + i;
+        }
+    }
+    return 0;
+}
+
+inline uintptr_t FindPattern(const char* moduleName, const char* pattern, const char* mask) {
+    HMODULE hModule = GetModuleHandleA(moduleName);
+    if (!hModule) return 0;
+    
+    uintptr_t base = reinterpret_cast<uintptr_t>(hModule);
+    size_t size = GetModuleSize(hModule);
+    
+    return FindPattern(base, size, pattern, mask);
+}
+
+// ============================================
+// IDA-style Pattern Scanning
+// ============================================
+
+inline std::vector<uint8_t> ParseIDAPattern(const std::string& pattern) {
+    std::vector<uint8_t> bytes;
+    
+    size_t i = 0;
+    while (i < pattern.size()) {
+        if (pattern[i] == ' ') {
+            ++i;
+            continue;
+        }
+        
+        if (pattern[i] == '?') {
+            bytes.push_back(0);
+            while (i < pattern.size() && pattern[i] == '?') ++i;
+        } else {
+            char byte[3] = {pattern[i], pattern[i + 1], 0};
+            bytes.push_back(static_cast<uint8_t>(strtol(byte, nullptr, 16)));
+            i += 2;
+        }
     }
     
-    ~ScopedVirtualProtect() {
-        DWORD temp;
-        VirtualProtect(m_address, m_size, m_oldProtect, &temp);
+    return bytes;
+}
+
+inline uintptr_t FindPatternIDA(const char* moduleName, const std::string& pattern) {
+    HMODULE hModule = GetModuleHandleA(moduleName);
+    if (!hModule) return 0;
+    
+    uintptr_t base = reinterpret_cast<uintptr_t>(hModule);
+    size_t size = GetModuleSize(hModule);
+    
+    auto bytes = ParseIDAPattern(pattern);
+    std::string patternRaw(bytes.begin(), bytes.end());
+    
+    std::string mask;
+    for (char c : pattern) {
+        if (c == '?') mask += '?';
+        else if (c != ' ' && mask.size() < bytes.size()) {
+            // Only add 'x' for actual bytes
+        }
     }
     
-private:
-    void* m_address;
-    size_t m_size;
-    DWORD m_oldProtect;
-};
+    // Rebuild mask properly
+    mask.clear();
+    size_t pos = 0;
+    for (size_t i = 0; i < pattern.size() && pos < bytes.size(); ++i) {
+        if (pattern[i] == ' ') continue;
+        
+        if (pattern[i] == '?') {
+            mask += '?';
+            while (i < pattern.size() && pattern[i] == '?') ++i;
+            --i;
+            ++pos;
+        } else {
+            mask += 'x';
+            ++i; // Skip second hex char
+            ++pos;
+        }
+    }
+    
+    return FindPattern(base, size, patternRaw.c_str(), mask.c_str());
+}
 
-} // namespace mem
-
+} // namespace memory

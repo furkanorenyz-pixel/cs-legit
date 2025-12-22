@@ -75,10 +75,14 @@ jobs:
       - name: 🔧 Setup MSVC
         uses: microsoft/setup-msbuild@v2
 
+      - name: 📥 Download ImGui
+        run: |
+          git clone --depth 1 --branch v1.90.1 https://github.com/ocornut/imgui.git ${{ env.SOLUTION_DIR }}/external/imgui
+
       - name: 🔧 Configure CMake
         working-directory: ${{ env.SOLUTION_DIR }}/internal
         run: |
-          cmake -B build -G "Visual Studio 17 2022" -A x64 -DUSE_IMGUI=OFF
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -DUSE_IMGUI=ON
 
       - name: 🔨 Build
         working-directory: ${{ env.SOLUTION_DIR }}/internal
