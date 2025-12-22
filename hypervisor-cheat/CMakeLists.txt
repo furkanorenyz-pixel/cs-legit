@@ -2,7 +2,13 @@
 # Ring -3 Bootkit → Ring -1 Hypervisor → Ring 3 Overlay
 
 cmake_minimum_required(VERSION 3.20)
-project(HypervisorCheat VERSION 1.0.0 LANGUAGES C CXX ASM_MASM)
+
+# Enable ASM_MASM for Windows
+if(WIN32)
+    enable_language(ASM_MASM)
+endif()
+
+project(HypervisorCheat VERSION 1.0.0 LANGUAGES C CXX)
 
 # ============================================
 # Global Settings
@@ -28,10 +34,26 @@ set(COMMON_INCLUDE ${CMAKE_SOURCE_DIR}/common)
 # ============================================
 
 if(WIN32)
-    add_executable(hypervisor_overlay
+    # Source files
+    set(OVERLAY_SOURCES
         usermode/src/main.cpp
         usermode/src/hypervisor.cpp
         usermode/src/esp.cpp
+    )
+    
+    # Assembly files (MASM)
+    set(OVERLAY_ASM
+        usermode/src/vmcall.asm
+    )
+    
+    # Set MASM flags
+    set_source_files_properties(${OVERLAY_ASM} PROPERTIES
+        LANGUAGE ASM_MASM
+    )
+    
+    add_executable(hypervisor_overlay
+        ${OVERLAY_SOURCES}
+        ${OVERLAY_ASM}
     )
 
     target_include_directories(hypervisor_overlay PRIVATE
@@ -58,6 +80,8 @@ if(WIN32)
         target_compile_options(hypervisor_overlay PRIVATE
             $<$<CONFIG:Release>:/O2 /Ob2 /Oi /Ot /GL>
             /W4
+            /wd4100  # unreferenced formal parameter
+            /wd4189  # local variable initialized but not referenced
         )
         
         target_link_options(hypervisor_overlay PRIVATE
@@ -94,4 +118,3 @@ message(STATUS "║    - Hypervisor: Custom build (see hypervisor/)             
 message(STATUS "║    - Bootkit: EDK2 (see bootkit/)                             ║")
 message(STATUS "╚═══════════════════════════════════════════════════════════════╝")
 message(STATUS "")
-

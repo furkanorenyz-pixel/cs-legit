@@ -62,6 +62,49 @@ jobs:
           path: artifacts/overlay/
 
   # ============================================
+  # Internal DLL - Windows
+  # ============================================
+  build-internal:
+    name: 💉 Build Internal DLL
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup MSVC
+        uses: microsoft/setup-msbuild@v2
+
+      - name: 🔧 Configure CMake
+        working-directory: ${{ env.SOLUTION_DIR }}/internal
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -DUSE_IMGUI=OFF
+
+      - name: 🔨 Build
+        working-directory: ${{ env.SOLUTION_DIR }}/internal
+        run: |
+          cmake --build build --config Release
+
+      - name: 📦 Package
+        run: |
+          mkdir -p artifacts/internal
+          
+          # Copy DLL
+          $dllPath = "${{ env.SOLUTION_DIR }}/internal/build/bin/Release/hv_internal.dll"
+          if (Test-Path $dllPath) {
+            Copy-Item $dllPath artifacts/internal/
+          }
+          
+          # Copy source for reference
+          Copy-Item "${{ env.SOLUTION_DIR }}/internal/include/*.hpp" artifacts/internal/
+        shell: pwsh
+
+      - name: 📤 Upload Internal
+        uses: actions/upload-artifact@v4
+        with:
+          name: hypervisor-internal-x64
+          path: artifacts/internal/
+  # ============================================
   # Bootkit (Ring -3) - Ubuntu/EDK2
   # ============================================
   build-bootkit:
@@ -140,6 +183,7 @@ jobs:
             DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
             PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
             RegisterFilterLib|MdePkg/Library/RegisterFilterLibNull/RegisterFilterLibNull.inf
+            StackCheckLib|MdePkg/Library/StackCheckLibNull/StackCheckLibNull.inf
           
           [Components]
             HypervisorBootkitPkg/Bootkit.inf
@@ -436,7 +480,7 @@ jobs:
   summary:
     name: 📊 Build Summary
     runs-on: ubuntu-latest
-    needs: [build-overlay, build-bootkit, package-headers]
+    needs: [build-overlay, build-internal, build-bootkit, package-headers]
     if: always()
     
     steps:
@@ -447,11 +491,13 @@ jobs:
           echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Usermode Overlay | ${{ needs.build-overlay.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Internal DLL | ${{ needs.build-internal.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Ring -3 Bootkit | ${{ needs.build-bootkit.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Headers Package | ${{ needs.package-headers.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📁 Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- \`hypervisor-overlay-x64\` - Windows ESP overlay" >> $GITHUB_STEP_SUMMARY
+          echo "- \`hypervisor-overlay-x64\` - External ESP overlay" >> $GITHUB_STEP_SUMMARY
+          echo "- \`hypervisor-internal-x64\` - Internal DLL (inject with manual map)" >> $GITHUB_STEP_SUMMARY
           echo "- \`hypervisor-bootkit-x64\` - UEFI bootkit" >> $GITHUB_STEP_SUMMARY
           echo "- \`hypervisor-headers\` - Development headers" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

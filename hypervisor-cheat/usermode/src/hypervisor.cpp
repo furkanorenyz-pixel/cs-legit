@@ -5,50 +5,28 @@
 
 #include "../include/hypervisor.hpp"
 #include <iostream>
-#include <intrin.h>
+#include <cstring>
 
 namespace hv {
 
 // ============================================
-// VMCALL Implementation
+// VMCALL Implementation (uses vmcall.asm)
 // ============================================
 
 uint64_t Hypervisor::Vmcall(uint64_t number, uint64_t p1, uint64_t p2, uint64_t p3) {
-    // Combine number with magic for verification
-    uint64_t raxValue = number | ((uint64_t)VMCALL_MAGIC << 32);
-    
-    uint64_t result = 0;
-    
-    // Execute VMCALL
-    // RAX = number | magic
-    // RBX = param1
-    // RCX = param2  
-    // RDX = param3
-    // Result returned in RAX
-    
     __try {
-        // VMCALL instruction
-        // Will cause VM exit to our hypervisor
-        // If no hypervisor present, causes #UD
-        
-        __asm {
-            mov rax, raxValue
-            mov rbx, p1
-            mov rcx, p2
-            mov rdx, p3
-            
-            ; VMCALL opcode: 0F 01 C1
-            db 0x0F, 0x01, 0xC1
-            
-            mov result, rax
-        }
+        // DoVmcall is implemented in vmcall.asm
+        // It handles the VMCALL instruction and parameter setup
+        return DoVmcall(number, p1, p2, p3);
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
         // VMCALL failed - no hypervisor or not ours
+        // This happens if:
+        // - No hypervisor is running
+        // - The hypervisor doesn't handle our magic number
+        // - VMCALL caused #UD (undefined opcode) - shouldn't happen on VT-x capable CPU
         return VMCALL_ERROR;
     }
-    
-    return result;
 }
 
 // ============================================
@@ -60,26 +38,30 @@ bool Hypervisor::Initialize() {
         return true;  // Already initialized
     }
     
+    std::cout << "[HV] Pinging hypervisor..." << std::endl;
+    
     // Ping hypervisor
     uint64_t result = Vmcall(VMCALL_PING, 0, 0, 0);
     
     if (result != 1) {
-        std::cerr << "[HV] Hypervisor not responding!" << std::endl;
+        std::cout << "[HV] Hypervisor not responding (result=" << result << ")" << std::endl;
         return false;
     }
     
+    std::cout << "[HV] Hypervisor responded!" << std::endl;
+    
     // Get info
     HV_INFO info = {};
-    result = Vmcall(VMCALL_GET_INFO, (uint64_t)&info, sizeof(info), 0);
+    result = Vmcall(VMCALL_GET_INFO, reinterpret_cast<uint64_t>(&info), sizeof(info), 0);
     
     if (result != VMCALL_SUCCESS) {
-        std::cerr << "[HV] Failed to get hypervisor info!" << std::endl;
+        std::cout << "[HV] Failed to get hypervisor info (result=" << result << ")" << std::endl;
         return false;
     }
     
     // Verify signature
-    if (memcmp(info.Signature, HV_SIGNATURE, 8) != 0) {
-        std::cerr << "[HV] Invalid hypervisor signature!" << std::endl;
+    if (memcmp(info.Signature, HV_SIGNATURE, 7) != 0) {
+        std::cout << "[HV] Invalid hypervisor signature!" << std::endl;
         return false;
     }
     
@@ -108,7 +90,7 @@ std::optional<uint64_t> Hypervisor::GetProcessCr3(uint32_t pid) {
     HV_PROCESS_REQUEST req = {};
     req.ProcessId = pid;
     
-    uint64_t result = Vmcall(VMCALL_GET_PROCESS, (uint64_t)&req, 0, 0);
+    uint64_t result = Vmcall(VMCALL_GET_PROCESS, reinterpret_cast<uint64_t>(&req), 0, 0);
     
     if (result != VMCALL_SUCCESS || req.Status != HV_SUCCESS) {
         return std::nullopt;
@@ -124,7 +106,7 @@ std::optional<uint64_t> Hypervisor::GetModuleBase(uint32_t pid, const char* modu
     req.ProcessId = pid;
     strncpy_s(req.ModuleName, moduleName, sizeof(req.ModuleName) - 1);
     
-    uint64_t result = Vmcall(VMCALL_GET_MODULE, (uint64_t)&req, 0, 0);
+    uint64_t result = Vmcall(VMCALL_GET_MODULE, reinterpret_cast<uint64_t>(&req), 0, 0);
     
     if (result != VMCALL_SUCCESS || req.Status != HV_SUCCESS) {
         return std::nullopt;
@@ -139,7 +121,7 @@ uint32_t Hypervisor::FindProcess(const char* processName) {
     HV_PROCESS_REQUEST req = {};
     strncpy_s(req.Name, processName, sizeof(req.Name) - 1);
     
-    uint64_t result = Vmcall(VMCALL_FIND_PROCESS, (uint64_t)&req, 0, 0);
+    uint64_t result = Vmcall(VMCALL_FIND_PROCESS, reinterpret_cast<uint64_t>(&req), 0, 0);
     
     if (result != VMCALL_SUCCESS || req.Status != HV_SUCCESS) {
         return 0;
@@ -159,10 +141,10 @@ bool Hypervisor::ReadMemory(uint64_t cr3, uint64_t address, void* buffer, size_t
     HV_READ_REQUEST req = {};
     req.ProcessCr3 = cr3;
     req.VirtualAddress = address;
-    req.BufferAddress = (uint64_t)buffer;
+    req.BufferAddress = reinterpret_cast<uint64_t>(buffer);
     req.Size = size;
     
-    uint64_t result = Vmcall(VMCALL_READ_VIRTUAL, (uint64_t)&req, 0, 0);
+    uint64_t result = Vmcall(VMCALL_READ_VIRTUAL, reinterpret_cast<uint64_t>(&req), 0, 0);
     
     return (result == VMCALL_SUCCESS && req.Status == HV_SUCCESS);
 }
@@ -185,10 +167,9 @@ bool Hypervisor::ReadGameData(uint32_t pid, GAME_DATA* data) {
     if (!m_active) return false;
     if (!data) return false;
     
-    uint64_t result = Vmcall(VMCALL_READ_GAME_DATA, pid, (uint64_t)data, 0);
+    uint64_t result = Vmcall(VMCALL_READ_GAME_DATA, pid, reinterpret_cast<uint64_t>(data), 0);
     
     return (result == VMCALL_SUCCESS);
 }
 
 } // namespace hv
-

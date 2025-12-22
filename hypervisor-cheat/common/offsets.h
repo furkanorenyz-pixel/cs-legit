@@ -2,107 +2,129 @@
  * HYPERVISOR CHEAT - CS2 Offsets
  * Auto-updated from cs2-dumper
  * 
- * Last update: 2024-12-22
- * Game version: CS2
+ * Last update: 2025-12-21
+ * Source: https://github.com/a2x/cs2-dumper
  */
 
 #pragma once
 
+#include <cstdint>
+
 namespace offsets {
 
 // ============================================
-// client.dll
+// client.dll - Main offsets
 // ============================================
 namespace client {
-    constexpr auto dwEntityList = 0x1A146C8;
-    constexpr auto dwLocalPlayerController = 0x1A6ADF8;
-    constexpr auto dwLocalPlayerPawn = 0x1890CC8;
-    constexpr auto dwViewMatrix = 0x1A81350;
-    constexpr auto dwViewAngles = 0x1A8C4E0;
-    constexpr auto dwGlobalVars = 0x1890998;
+    constexpr uintptr_t dwCSGOInput = 0x1E3C150;
+    constexpr uintptr_t dwEntityList = 0x1D13CE8;
+    constexpr uintptr_t dwGameEntitySystem = 0x1FB89D0;
+    constexpr uintptr_t dwGameEntitySystem_highestEntityIndex = 0x20F0;
+    constexpr uintptr_t dwGameRules = 0x1E31410;
+    constexpr uintptr_t dwGlobalVars = 0x1BE41C0;
+    constexpr uintptr_t dwGlowManager = 0x1E2E2B8;
+    constexpr uintptr_t dwLocalPlayerController = 0x1E1DC18;
+    constexpr uintptr_t dwLocalPlayerPawn = 0x1BEEF28;
+    constexpr uintptr_t dwPlantedC4 = 0x1E36BE8;
+    constexpr uintptr_t dwPrediction = 0x1BEEE40;
+    constexpr uintptr_t dwSensitivity = 0x1E2ED08;
+    constexpr uintptr_t dwSensitivity_sensitivity = 0x50;
+    constexpr uintptr_t dwViewAngles = 0x1E3C800;
+    constexpr uintptr_t dwViewMatrix = 0x1E323D0;
+    constexpr uintptr_t dwViewRender = 0x1E32F48;
+    constexpr uintptr_t dwWeaponC4 = 0x1DCF190;
+}
+
+// ============================================
+// engine2.dll
+// ============================================
+namespace engine2 {
+    constexpr uintptr_t dwBuildNumber = 0x5F13E4;
+    constexpr uintptr_t dwNetworkGameClient = 0x8EB538;
+    constexpr uintptr_t dwNetworkGameClient_clientTickCount = 0x390;
+    constexpr uintptr_t dwNetworkGameClient_deltaTick = 0x23C;
+    constexpr uintptr_t dwNetworkGameClient_localPlayer = 0xE8;
+    constexpr uintptr_t dwNetworkGameClient_maxClients = 0x230;
+    constexpr uintptr_t dwNetworkGameClient_serverTickCount = 0x23C;
+    constexpr uintptr_t dwNetworkGameClient_signOnState = 0x220;
+    constexpr uintptr_t dwWindowHeight = 0x8EF844;
+    constexpr uintptr_t dwWindowWidth = 0x8EF840;
 }
 
 // ============================================
 // C_BaseEntity
 // ============================================
 namespace entity {
-    constexpr auto m_iHealth = 0x344;
-    constexpr auto m_iTeamNum = 0x3E3;
-    constexpr auto m_pGameSceneNode = 0x328;
-    constexpr auto m_fFlags = 0x3EC;
-    constexpr auto m_vecAbsVelocity = 0x3F0;
-}
-
-// ============================================
-// C_BasePlayerPawn
-// ============================================
-namespace pawn {
-    constexpr auto m_vOldOrigin = 0x1324;
-    constexpr auto m_iIDEntIndex = 0x15B4;
+    constexpr uintptr_t m_pGameSceneNode = 0x330;  // CGameSceneNode*
+    constexpr uintptr_t m_iHealth = 0x34C;          // int32
+    constexpr uintptr_t m_iTeamNum = 0x3EB;         // uint8
+    constexpr uintptr_t m_fFlags = 0x3EC;           // uint32
 }
 
 // ============================================
 // CCSPlayerController
 // ============================================
 namespace controller {
-    constexpr auto m_hPlayerPawn = 0x80C;
-    constexpr auto m_sSanitizedPlayerName = 0x768;
-    constexpr auto m_bPawnIsAlive = 0x814;
+    constexpr uintptr_t m_sSanitizedPlayerName = 0x850;  // CUtlString
+    constexpr uintptr_t m_hPlayerPawn = 0x8FC;           // CHandle
+    constexpr uintptr_t m_bPawnIsAlive = 0x904;          // bool
 }
 
 // ============================================
-// C_CSPlayerPawnBase
+// C_BasePlayerPawn
+// ============================================
+namespace pawn {
+    constexpr uintptr_t m_vOldOrigin = 0x15A0;  // Vector
+}
+
+// ============================================
+// C_CSPlayerPawn (extends C_BasePlayerPawn)
 // ============================================
 namespace player {
-    constexpr auto m_ArmorValue = 0x1648;
-    constexpr auto m_flFlashDuration = 0x1454;
-    constexpr auto m_flFlashBangTime = 0x1458;
-    constexpr auto m_iShotsFired = 0x1488;
-    constexpr auto m_aimPunchAngle = 0x17A0;
-    constexpr auto m_aimPunchAngleVel = 0x17AC;
-    constexpr auto m_bGunGameImmunity = 0x13EC;
-    constexpr auto m_fMolotovDamageTime = 0x13F0;
-    constexpr auto m_entitySpottedState = 0x23B0;
-    constexpr auto m_bSpotted = 0x8; // + entitySpottedState
+    // EntitySpottedState для разных классов:
+    // C_CSPlayerPawn -> 0x1170
+    // C_PlantedC4 -> 0x13F0
+    constexpr uintptr_t m_entitySpottedState = 0x1170;  // EntitySpottedState_t
+    constexpr uintptr_t m_bSpotted = 0x8;               // относительно m_entitySpottedState
 }
 
 // ============================================
 // CGameSceneNode
 // ============================================
 namespace scene {
-    constexpr auto m_vecAbsOrigin = 0xD0;
-    constexpr auto m_angAbsRotation = 0xDC;
+    constexpr uintptr_t m_vecAbsOrigin = 0xD0;  // Vector
 }
 
 // ============================================
 // CSkeletonInstance
 // ============================================
 namespace skeleton {
-    constexpr auto m_modelState = 0x170;
-    constexpr auto m_boneArray = 0x80; // + modelState
+    constexpr uintptr_t m_modelState = 0x190;   // CModelState
+    constexpr uintptr_t m_boneArray = 0x80;     // + modelState -> кости
 }
 
 // ============================================
 // Bone IDs
 // ============================================
 namespace bones {
-    constexpr auto head = 6;
-    constexpr auto neck = 5;
-    constexpr auto spine = 4;
-    constexpr auto pelvis = 0;
-    constexpr auto left_shoulder = 8;
-    constexpr auto left_elbow = 9;
-    constexpr auto left_hand = 10;
-    constexpr auto right_shoulder = 13;
-    constexpr auto right_elbow = 14;
-    constexpr auto right_hand = 15;
-    constexpr auto left_hip = 22;
-    constexpr auto left_knee = 23;
-    constexpr auto left_foot = 24;
-    constexpr auto right_hip = 25;
-    constexpr auto right_knee = 26;
-    constexpr auto right_foot = 27;
+    constexpr int head = 6;
+    constexpr int neck = 5;
+    constexpr int spine_2 = 4;
+    constexpr int spine_1 = 3;
+    constexpr int spine = 2;
+    constexpr int pelvis = 0;
+    constexpr int left_shoulder = 8;
+    constexpr int left_elbow = 9;
+    constexpr int left_hand = 10;
+    constexpr int right_shoulder = 13;
+    constexpr int right_elbow = 14;
+    constexpr int right_hand = 15;
+    constexpr int left_hip = 22;
+    constexpr int left_knee = 23;
+    constexpr int left_foot = 24;
+    constexpr int right_hip = 25;
+    constexpr int right_knee = 26;
+    constexpr int right_foot = 27;
 }
 
 } // namespace offsets
-

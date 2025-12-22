@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <stdint.h>
+
 // ============================================
 // VMCALL Numbers
 // ============================================
@@ -47,75 +49,42 @@
 #define VMCALL_ERROR            0x80000000
 
 // ============================================
-// Inline VMCALL (for usermode)
+// VMCALL Declaration (implemented in vmcall.asm)
 // ============================================
 
-#ifdef _MSC_VER
-#include <intrin.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-// VMCALL wrapper - works even from Ring 3 if HV is active
-static __forceinline unsigned __int64 DoVmcall(
-    unsigned __int64 number,
-    unsigned __int64 param1,
-    unsigned __int64 param2,
-    unsigned __int64 param3
-) {
-    unsigned __int64 result;
-    
-    // VMCALL with magic number in high bits
-    // RAX = VMCALL number | (MAGIC << 32)
-    // RBX = param1
-    // RCX = param2
-    // RDX = param3
-    
-    __asm {
-        mov rax, number
-        mov rbx, param1
-        mov rcx, param2
-        mov rdx, param3
-        
-        ; VMCALL instruction
-        ; db 0x0F, 0x01, 0xC1
-        vmcall
-        
-        mov result, rax
-    }
-    
-    return result;
+/**
+ * Execute VMCALL instruction
+ * Implemented in assembly (vmcall.asm)
+ * 
+ * @param number  VMCALL number (will be OR'd with MAGIC << 32)
+ * @param param1  First parameter
+ * @param param2  Second parameter
+ * @param param3  Third parameter
+ * @return Result from hypervisor
+ */
+uint64_t DoVmcall(
+    uint64_t number,
+    uint64_t param1,
+    uint64_t param2,
+    uint64_t param3
+);
+
+#ifdef __cplusplus
 }
-
-#else  // GCC/Clang
-
-static inline unsigned long long DoVmcall(
-    unsigned long long number,
-    unsigned long long param1,
-    unsigned long long param2,
-    unsigned long long param3
-) {
-    unsigned long long result;
-    
-    __asm__ volatile(
-        "vmcall"
-        : "=a"(result)
-        : "a"(number | ((unsigned long long)VMCALL_MAGIC << 32)),
-          "b"(param1),
-          "c"(param2),
-          "d"(param3)
-        : "memory"
-    );
-    
-    return result;
-}
-
 #endif
 
 // ============================================
 // Helper Functions
 // ============================================
 
+#ifdef __cplusplus
 // Check if our hypervisor is running
-static inline int IsHypervisorActive(void) {
-    unsigned long long result = DoVmcall(VMCALL_PING, 0, 0, 0);
+inline bool IsHypervisorActive() {
+    uint64_t result = DoVmcall(VMCALL_PING, 0, 0, 0);
     return (result == 0x1);
 }
-
+#endif
