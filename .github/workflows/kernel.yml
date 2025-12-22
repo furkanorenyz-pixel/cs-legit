@@ -80,17 +80,35 @@ jobs:
       - name: 📥 Setup EDK2
         if: steps.cache-edk2.outputs.cache-hit != 'true'
         run: |
-          echo "[1/2] Cloning EDK2..."
+          echo "[1/3] Cloning EDK2..."
           cd ~
           git clone --depth 1 --branch ${{ env.EDK2_VERSION }} \
             https://github.com/tianocore/edk2.git
           
           cd edk2
-          git submodule update --init --recursive --depth 1
           
-          echo "[2/2] Building BaseTools..."
+          echo "[2/3] Initializing required submodules only..."
+          # Only init submodules we actually need (skip UnitTest, Redfish, etc.)
+          git submodule update --init --depth 1 \
+            BaseTools/Source/C/BrotliCompress/brotli \
+            MdeModulePkg/Library/BrotliCustomDecompressLib/brotli \
+            || true
+          
+          # If submodule fails, try without depth
+          if [ ! -d "BaseTools/Source/C/BrotliCompress/brotli/.git" ]; then
+            echo "Retrying submodules without depth..."
+            git submodule update --init \
+              BaseTools/Source/C/BrotliCompress/brotli \
+              MdeModulePkg/Library/BrotliCustomDecompressLib/brotli \
+              || echo "Submodule init had issues, continuing anyway..."
+          fi
+          
+          echo "[3/3] Building BaseTools..."
           source edksetup.sh
-          make -C BaseTools -j$(nproc)
+          make -C BaseTools -j$(nproc) || {
+            echo "BaseTools build failed, trying with fewer jobs..."
+            make -C BaseTools -j2
+          }
           
           echo "✅ EDK2 ready"
 
