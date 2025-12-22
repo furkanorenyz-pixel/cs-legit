@@ -87,21 +87,23 @@ jobs:
           
           cd edk2
           
-          echo "[2/3] Initializing required submodules only..."
-          # Only init submodules we actually need (skip UnitTest, Redfish, etc.)
-          git submodule update --init --depth 1 \
-            BaseTools/Source/C/BrotliCompress/brotli \
-            MdeModulePkg/Library/BrotliCustomDecompressLib/brotli \
-            || true
+          echo "[2/3] Initializing required submodules..."
+          # Init submodules needed for MdePkg and BaseTools
+          # Skip problematic ones: UnitTestFrameworkPkg/SubhookLib, CryptoPkg/openssl
           
-          # If submodule fails, try without depth
-          if [ ! -d "BaseTools/Source/C/BrotliCompress/brotli/.git" ]; then
-            echo "Retrying submodules without depth..."
-            git submodule update --init \
-              BaseTools/Source/C/BrotliCompress/brotli \
-              MdeModulePkg/Library/BrotliCustomDecompressLib/brotli \
-              || echo "Submodule init had issues, continuing anyway..."
-          fi
+          REQUIRED_SUBMODULES=(
+            "BaseTools/Source/C/BrotliCompress/brotli"
+            "MdeModulePkg/Library/BrotliCustomDecompressLib/brotli"
+            "MdePkg/Library/MipiSysTLib/mipisyst"
+            "MdePkg/Library/BaseFdtLib/libfdt"
+          )
+          
+          for submodule in "${REQUIRED_SUBMODULES[@]}"; do
+            echo "  Initializing $submodule..."
+            git submodule update --init --depth 1 "$submodule" 2>/dev/null || \
+            git submodule update --init "$submodule" 2>/dev/null || \
+            echo "  ⚠️ Failed to init $submodule, continuing..."
+          done
           
           echo "[3/3] Building BaseTools..."
           source edksetup.sh
