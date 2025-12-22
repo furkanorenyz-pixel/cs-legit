@@ -113,7 +113,7 @@ bool ReadPlayerData(uintptr_t controller, uintptr_t entityList, PlayerData& data
     data.valid = false;
     
     // Read player pawn handle
-    uint32_t pawnHandle = memory::Read<uint32_t>(controller + offsets::entity::m_hPlayerPawn);
+    uint32_t pawnHandle = memory::Read<uint32_t>(controller + offsets::controller::m_hPlayerPawn);
     if (!pawnHandle) return false;
     
     // Get pawn from entity list
@@ -135,7 +135,7 @@ bool ReadPlayerData(uintptr_t controller, uintptr_t entityList, PlayerData& data
     
     // Name
     char nameBuffer[128] = {};
-    uintptr_t namePtr = memory::Read<uintptr_t>(controller + offsets::entity::m_sSanitizedPlayerName);
+    uintptr_t namePtr = memory::Read<uintptr_t>(controller + offsets::controller::m_sSanitizedPlayerName);
     if (namePtr) {
         memory::ReadBuffer(namePtr, nameBuffer, 127);
         data.name = nameBuffer;

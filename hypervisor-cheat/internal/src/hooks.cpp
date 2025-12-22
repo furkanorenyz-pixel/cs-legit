@@ -364,7 +364,7 @@ bool Initialize() {
     
     DWORD temp;
     VirtualProtect(presentTrampoline, 32, PAGE_EXECUTE_READWRITE, &temp);
-    g_originalPresent = reinterpret_cast<PresentFn>(presentTrampoline);
+    g_originalPresent = reinterpret_cast<PresentFn>(reinterpret_cast<void*>(presentTrampoline));
     
     // Write jump to our hook
     uint8_t* hook = reinterpret_cast<uint8_t*>(g_originalPresentAddr);
@@ -386,7 +386,7 @@ bool Initialize() {
     *reinterpret_cast<uint64_t*>(resizeTrampoline + 20) = g_originalResizeAddr + 14;
     
     VirtualProtect(resizeTrampoline, 32, PAGE_EXECUTE_READWRITE, &temp);
-    g_originalResizeBuffers = reinterpret_cast<ResizeBuffersFn>(resizeTrampoline);
+    g_originalResizeBuffers = reinterpret_cast<ResizeBuffersFn>(reinterpret_cast<void*>(resizeTrampoline));
     
     hook = reinterpret_cast<uint8_t*>(g_originalResizeAddr);
     hook[0] = 0xFF;

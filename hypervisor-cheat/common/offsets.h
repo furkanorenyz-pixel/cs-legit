@@ -15,7 +15,7 @@ namespace offsets {
 // ============================================
 // client.dll - Main offsets
 // ============================================
-namespace client {
+namespace client_dll {
     constexpr uintptr_t dwCSGOInput = 0x1E3C150;
     constexpr uintptr_t dwEntityList = 0x1D13CE8;
     constexpr uintptr_t dwGameEntitySystem = 0x1FB89D0;
