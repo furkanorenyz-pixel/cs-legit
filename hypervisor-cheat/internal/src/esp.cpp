@@ -4,9 +4,12 @@
  */
 
 #include "../include/esp.hpp"
-#include <imgui.h>
 #include <cmath>
 #include <algorithm>
+
+#ifdef HAS_IMGUI
+#include <imgui.h>
+#endif
 
 namespace esp {
 
@@ -242,6 +245,7 @@ void Update() {
 // ============================================
 
 void Render() {
+#ifdef HAS_IMGUI
     if (!g_config.enabled) return;
     
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
@@ -255,25 +259,25 @@ void Render() {
         if (player.enemy) {
             if (player.visible) {
                 color = IM_COL32(
-                    g_config.enemyVisibleColor[0] * 255,
-                    g_config.enemyVisibleColor[1] * 255,
-                    g_config.enemyVisibleColor[2] * 255,
-                    g_config.enemyVisibleColor[3] * 255
+                    static_cast<int>(g_config.enemyVisibleColor[0] * 255),
+                    static_cast<int>(g_config.enemyVisibleColor[1] * 255),
+                    static_cast<int>(g_config.enemyVisibleColor[2] * 255),
+                    static_cast<int>(g_config.enemyVisibleColor[3] * 255)
                 );
             } else {
                 color = IM_COL32(
-                    g_config.enemyColor[0] * 255,
-                    g_config.enemyColor[1] * 255,
-                    g_config.enemyColor[2] * 255,
-                    g_config.enemyColor[3] * 255
+                    static_cast<int>(g_config.enemyColor[0] * 255),
+                    static_cast<int>(g_config.enemyColor[1] * 255),
+                    static_cast<int>(g_config.enemyColor[2] * 255),
+                    static_cast<int>(g_config.enemyColor[3] * 255)
                 );
             }
         } else {
             color = IM_COL32(
-                g_config.teamColor[0] * 255,
-                g_config.teamColor[1] * 255,
-                g_config.teamColor[2] * 255,
-                g_config.teamColor[3] * 255
+                static_cast<int>(g_config.teamColor[0] * 255),
+                static_cast<int>(g_config.teamColor[1] * 255),
+                static_cast<int>(g_config.teamColor[2] * 255),
+                static_cast<int>(g_config.teamColor[3] * 255)
             );
         }
         
@@ -335,10 +339,10 @@ void Render() {
             ImU32 healthColor;
             if (healthPercent > 0.5f) {
                 float t = (healthPercent - 0.5f) * 2;
-                healthColor = IM_COL32((1.0f - t) * 255, 255, 0, 255);
+                healthColor = IM_COL32(static_cast<int>((1.0f - t) * 255), 255, 0, 255);
             } else {
                 float t = healthPercent * 2;
-                healthColor = IM_COL32(255, t * 255, 0, 255);
+                healthColor = IM_COL32(255, static_cast<int>(t * 255), 0, 255);
             }
             
             draw->AddRectFilled(
@@ -389,7 +393,7 @@ void Render() {
             GetClientRect(hwnd, &rect);
             
             draw->AddLine(
-                ImVec2(rect.right / 2.0f, (float)rect.bottom),
+                ImVec2(rect.right / 2.0f, static_cast<float>(rect.bottom)),
                 ImVec2(player.screenPos.x, player.screenPos.y),
                 color,
                 1.0f
@@ -399,10 +403,10 @@ void Render() {
         // Skeleton
         if (g_config.skeletonEnabled) {
             ImU32 skelColor = IM_COL32(
-                g_config.skeletonColor[0] * 255,
-                g_config.skeletonColor[1] * 255,
-                g_config.skeletonColor[2] * 255,
-                g_config.skeletonColor[3] * 255
+                static_cast<int>(g_config.skeletonColor[0] * 255),
+                static_cast<int>(g_config.skeletonColor[1] * 255),
+                static_cast<int>(g_config.skeletonColor[2] * 255),
+                static_cast<int>(g_config.skeletonColor[3] * 255)
             );
             
             // Bone connections
@@ -439,6 +443,10 @@ void Render() {
             }
         }
     }
+#else
+    // No ImGui - rendering requires HAS_IMGUI
+    (void)g_players;
+#endif
 }
 
 } // namespace esp

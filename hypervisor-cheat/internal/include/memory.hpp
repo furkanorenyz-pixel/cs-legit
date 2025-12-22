@@ -6,9 +6,12 @@
 #pragma once
 
 #include <Windows.h>
+#include <Psapi.h>
 #include <cstdint>
 #include <vector>
 #include <string>
+
+#pragma comment(lib, "psapi.lib")
 
 namespace mem {
 
@@ -28,7 +31,7 @@ inline ModuleInfo GetModule(const char* moduleName) {
     HMODULE hMod = GetModuleHandleA(moduleName);
     if (!hMod) return info;
     
-    MODULEINFO modInfo;
+    MODULEINFO modInfo = {};
     if (GetModuleInformation(GetCurrentProcess(), hMod, &modInfo, sizeof(modInfo))) {
         info.base = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
         info.size = modInfo.SizeOfImage;
