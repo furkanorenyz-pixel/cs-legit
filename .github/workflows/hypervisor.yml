@@ -89,6 +89,12 @@ jobs:
         run: |
           cmake --build build --config Release
 
+      - name: 🔧 Build Injector
+        working-directory: ${{ env.SOLUTION_DIR }}/injector
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64
+          cmake --build build --config Release
+
       - name: 📦 Package
         run: |
           mkdir -p artifacts/internal
@@ -98,6 +104,28 @@ jobs:
           if (Test-Path $dllPath) {
             Copy-Item $dllPath artifacts/internal/
           }
+          
+          # Copy injector
+          $injPath = "${{ env.SOLUTION_DIR }}/injector/build/bin/Release/hv_injector.exe"
+          if (Test-Path $injPath) {
+            Copy-Item $injPath artifacts/internal/
+          }
+          
+          # Create usage instructions
+          $readme = "HYPERVISOR CHEAT - Internal DLL`n"
+          $readme += "================================`n`n"
+          $readme += "FILES:`n"
+          $readme += "- hv_internal.dll - The cheat DLL`n"
+          $readme += "- hv_injector.exe - Simple injector`n`n"
+          $readme += "USAGE:`n"
+          $readme += "1. Start CS2`n"
+          $readme += "2. Run hv_injector.exe (as Administrator)`n"
+          $readme += "3. Wait for injection`n"
+          $readme += "4. Press INSERT to toggle menu`n`n"
+          $readme += "CONTROLS: INSERT = Toggle menu`n"
+          $readme += "ESP: Box, Health, Names, Distance, Skeleton`n"
+          $readme += "Colors: Red=Enemy, Green=Visible, Blue=Team`n"
+          Set-Content -Path artifacts/internal/README.txt -Value $readme
           
           # Copy source for reference
           Copy-Item "${{ env.SOLUTION_DIR }}/internal/include/*.hpp" artifacts/internal/
