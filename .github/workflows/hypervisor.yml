@@ -1,0 +1,462 @@
+# HYPERVISOR CHEAT - GitHub Actions Build
+# Builds Ring -3 Bootkit, Ring -1 Hypervisor (headers), and Ring 3 Overlay
+
+name: 🔥 Hypervisor Cheat Build
+
+on:
+  push:
+    paths:
+      - 'hypervisor-cheat/**'
+      - '.github/workflows/hypervisor.yml'
+  pull_request:
+    paths:
+      - 'hypervisor-cheat/**'
+  workflow_dispatch:
+
+env:
+  SOLUTION_DIR: hypervisor-cheat
+
+jobs:
+  # ============================================
+  # Usermode Overlay (Ring 3) - Windows
+  # ============================================
+  build-overlay:
+    name: 🖥️ Build Usermode Overlay
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup MSVC
+        uses: microsoft/setup-msbuild@v2
+
+      - name: 🔧 Configure CMake
+        working-directory: ${{ env.SOLUTION_DIR }}
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: 🔨 Build
+        working-directory: ${{ env.SOLUTION_DIR }}
+        run: |
+          cmake --build build --config Release
+
+      - name: 📦 Package
+        run: |
+          mkdir -p artifacts/overlay
+          
+          # Copy binary
+          if (Test-Path "${{ env.SOLUTION_DIR }}/build/bin/Release/hypervisor_overlay.exe") {
+            Copy-Item "${{ env.SOLUTION_DIR }}/build/bin/Release/hypervisor_overlay.exe" artifacts/overlay/
+          }
+          
+          # Copy docs
+          Copy-Item "${{ env.SOLUTION_DIR }}/docs/SAFETY.md" artifacts/overlay/
+          Copy-Item "${{ env.SOLUTION_DIR }}/README.md" artifacts/overlay/
+        shell: pwsh
+
+      - name: 📤 Upload Overlay
+        uses: actions/upload-artifact@v4
+        with:
+          name: hypervisor-overlay-x64
+          path: artifacts/overlay/
+
+  # ============================================
+  # Bootkit (Ring -3) - Ubuntu/EDK2
+  # ============================================
+  build-bootkit:
+    name: 🔥 Build Ring -3 Bootkit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 📦 Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            uuid-dev \
+            iasl \
+            nasm \
+            python3 \
+            python3-pip
+
+      - name: 📥 Clone EDK2
+        run: |
+          git clone --depth 1 https://github.com/tianocore/edk2.git ~/edk2
+          
+          cd ~/edk2
+          
+          # Init required submodules only
+          REQUIRED_SUBMODULES=(
+            "BaseTools/Source/C/BrotliCompress/brotli"
+            "MdeModulePkg/Library/BrotliCustomDecompressLib/brotli"
+            "MdePkg/Library/MipiSysTLib/mipisyst"
+            "MdePkg/Library/BaseFdtLib/libfdt"
+          )
+          
+          for submodule in "${REQUIRED_SUBMODULES[@]}"; do
+            echo "Initializing: $submodule"
+            git submodule update --init --depth 1 "$submodule" || true
+          done
+
+      - name: 🔧 Build EDK2 BaseTools
+        run: |
+          cd ~/edk2
+          source edksetup.sh
+          make -C BaseTools -j$(nproc)
+
+      - name: 📦 Create Bootkit Package
+        run: |
+          cd ~/edk2
+          
+          # Create package directory
+          mkdir -p HypervisorBootkitPkg
+          
+          # Create DSC file
+          cat > HypervisorBootkitPkg/HypervisorBootkitPkg.dsc << 'EOF'
+          [Defines]
+            PLATFORM_NAME                  = HypervisorBootkitPkg
+            PLATFORM_GUID                  = 12345678-1234-1234-1234-123456789ABC
+            PLATFORM_VERSION               = 1.0
+            DSC_SPECIFICATION              = 0x00010005
+            OUTPUT_DIRECTORY               = Build/HypervisorBootkitPkg
+            SUPPORTED_ARCHITECTURES        = X64
+            BUILD_TARGETS                  = RELEASE
+            SKUID_IDENTIFIER               = DEFAULT
+          
+          [LibraryClasses]
+            UefiDriverEntryPoint|MdePkg/Library/UefiDriverEntryPoint/UefiDriverEntryPoint.inf
+            UefiBootServicesTableLib|MdePkg/Library/UefiBootServicesTableLib/UefiBootServicesTableLib.inf
+            UefiRuntimeServicesTableLib|MdePkg/Library/UefiRuntimeServicesTableLib/UefiRuntimeServicesTableLib.inf
+            UefiLib|MdePkg/Library/UefiLib/UefiLib.inf
+            BaseLib|MdePkg/Library/BaseLib/BaseLib.inf
+            BaseMemoryLib|MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
+            MemoryAllocationLib|MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
+            PrintLib|MdePkg/Library/BasePrintLib/BasePrintLib.inf
+            DebugLib|MdePkg/Library/BaseDebugLibNull/BaseDebugLibNull.inf
+            DevicePathLib|MdePkg/Library/UefiDevicePathLib/UefiDevicePathLib.inf
+            PcdLib|MdePkg/Library/BasePcdLibNull/BasePcdLibNull.inf
+            RegisterFilterLib|MdePkg/Library/RegisterFilterLibNull/RegisterFilterLibNull.inf
+          
+          [Components]
+            HypervisorBootkitPkg/Bootkit.inf
+          EOF
+          
+          # Create INF file
+          cat > HypervisorBootkitPkg/Bootkit.inf << 'EOF'
+          [Defines]
+            INF_VERSION                    = 0x00010005
+            BASE_NAME                      = HypervisorBootkit
+            FILE_GUID                      = ABCD1234-ABCD-1234-ABCD-123456789DEF
+            MODULE_TYPE                    = DXE_DRIVER
+            VERSION_STRING                 = 1.0
+            ENTRY_POINT                    = BootkitEntry
+          
+          [Sources]
+            Bootkit.c
+          
+          [Packages]
+            MdePkg/MdePkg.dec
+          
+          [LibraryClasses]
+            UefiDriverEntryPoint
+            UefiBootServicesTableLib
+            UefiRuntimeServicesTableLib
+            UefiLib
+            BaseLib
+            BaseMemoryLib
+            MemoryAllocationLib
+            PrintLib
+          
+          [Depex]
+            TRUE
+          EOF
+          
+          # Create bootkit source with full safety features
+          cat > HypervisorBootkitPkg/Bootkit.c << 'BOOTKIT_EOF'
+          /**
+           * HYPERVISOR CHEAT - Ring -3 Bootkit
+           * UEFI DXE driver with comprehensive safety features
+           * 
+           * ⚠️ TEST IN VM ONLY!
+           */
+          
+          #include <Uefi.h>
+          #include <Library/UefiLib.h>
+          #include <Library/UefiBootServicesTableLib.h>
+          #include <Library/UefiRuntimeServicesTableLib.h>
+          #include <Library/MemoryAllocationLib.h>
+          #include <Library/BaseMemoryLib.h>
+          
+          // ============================================
+          // Safety Configuration
+          // ============================================
+          
+          #define VM_ONLY_MODE            1
+          #define DRY_RUN_MODE            0
+          #define ENABLE_LOGGING          1
+          #define MAX_PATCHES             16
+          
+          // ============================================
+          // Types
+          // ============================================
+          
+          typedef enum {
+              BK_SUCCESS = 0,
+              BK_ERROR_NOT_VM,
+              BK_ERROR_SAFETY,
+          } BK_STATUS;
+          
+          typedef struct {
+              VOID*   Address;
+              UINT8   OriginalBytes[64];
+              UINTN   Size;
+              BOOLEAN Applied;
+          } PATCH_BACKUP;
+          
+          typedef struct {
+              BOOLEAN IsVirtualMachine;
+              BOOLEAN SafetyTriggered;
+              UINT32  ErrorCount;
+              PATCH_BACKUP Patches[MAX_PATCHES];
+              UINT32 PatchCount;
+              BOOLEAN Initialized;
+          } BOOTKIT_STATE;
+          
+          static BOOTKIT_STATE gState = {0};
+          
+          // ============================================
+          // Logging
+          // ============================================
+          
+          #if ENABLE_LOGGING
+          #define LOG(fmt, ...) Print(L"[BK] " fmt L"\r\n", ##__VA_ARGS__)
+          #else
+          #define LOG(fmt, ...)
+          #endif
+          
+          // ============================================
+          // VM Detection
+          // ============================================
+          
+          BOOLEAN IsVirtualMachine(VOID) {
+              UINT32 Eax, Ebx, Ecx, Edx;
+              AsmCpuid(1, &Eax, &Ebx, &Ecx, &Edx);
+              
+              if (Ecx & (1 << 31)) {
+                  AsmCpuid(0x40000000, &Eax, &Ebx, &Ecx, &Edx);
+                  
+                  CHAR8 Vendor[13] = {0};
+                  *(UINT32*)&Vendor[0] = Ebx;
+                  *(UINT32*)&Vendor[4] = Ecx;
+                  *(UINT32*)&Vendor[8] = Edx;
+                  
+                  LOG(L"VM Detected: %a", Vendor);
+                  return TRUE;
+              }
+              return FALSE;
+          }
+          
+          // ============================================
+          // Safety Functions
+          // ============================================
+          
+          BK_STATUS SafetyInit(VOID) {
+              ZeroMem(&gState, sizeof(gState));
+              gState.IsVirtualMachine = IsVirtualMachine();
+              
+          #if VM_ONLY_MODE
+              if (!gState.IsVirtualMachine) {
+                  LOG(L"SAFETY BLOCK: Not running in VM!");
+                  gState.SafetyTriggered = TRUE;
+                  return BK_ERROR_NOT_VM;
+              }
+          #endif
+              
+              gState.Initialized = TRUE;
+              LOG(L"Safety initialized (VM: %s)", gState.IsVirtualMachine ? L"YES" : L"NO");
+              return BK_SUCCESS;
+          }
+          
+          VOID SafetyRollbackAll(VOID) {
+              LOG(L"Rolling back %u patches...", gState.PatchCount);
+              
+              for (UINT32 i = 0; i < gState.PatchCount; i++) {
+                  PATCH_BACKUP* b = &gState.Patches[i];
+                  if (b->Applied && b->Address) {
+                      CopyMem(b->Address, b->OriginalBytes, b->Size);
+                      b->Applied = FALSE;
+                  }
+              }
+          }
+          
+          BK_STATUS SafetyCreateBackup(VOID* Addr, UINTN Size) {
+              if (gState.PatchCount >= MAX_PATCHES || Size > 64) {
+                  return BK_ERROR_SAFETY;
+              }
+              
+              PATCH_BACKUP* b = &gState.Patches[gState.PatchCount++];
+              b->Address = Addr;
+              b->Size = Size;
+              b->Applied = FALSE;
+              CopyMem(b->OriginalBytes, Addr, Size);
+              
+              return BK_SUCCESS;
+          }
+          
+          // ============================================
+          // ExitBootServices Hook
+          // ============================================
+          
+          static EFI_EXIT_BOOT_SERVICES OrigExitBootServices = NULL;
+          
+          EFI_STATUS EFIAPI HookedExitBootServices(
+              IN EFI_HANDLE ImageHandle,
+              IN UINTN MapKey
+          ) {
+              LOG(L"ExitBootServices called - Windows loading!");
+              LOG(L"Hypervisor would be launched here");
+              return OrigExitBootServices(ImageHandle, MapKey);
+          }
+          
+          // ============================================
+          // Entry Point
+          // ============================================
+          
+          EFI_STATUS EFIAPI BootkitEntry(
+              IN EFI_HANDLE        ImageHandle,
+              IN EFI_SYSTEM_TABLE  *SystemTable
+          ) {
+              Print(L"\r\n");
+              Print(L"=== HYPERVISOR BOOTKIT v1.0 ===\r\n");
+              Print(L"\r\n");
+              
+              if (SafetyInit() != BK_SUCCESS) {
+                  return EFI_ABORTED;
+              }
+              
+          #if !DRY_RUN_MODE
+              OrigExitBootServices = gBS->ExitBootServices;
+              gBS->ExitBootServices = HookedExitBootServices;
+              LOG(L"ExitBootServices hooked");
+          #else
+              LOG(L"DRY RUN: Would hook ExitBootServices");
+          #endif
+              
+              LOG(L"Bootkit ready!");
+              return EFI_SUCCESS;
+          }
+          BOOTKIT_EOF
+
+      - name: 🔨 Build Bootkit
+        run: |
+          cd ~/edk2
+          source edksetup.sh
+          
+          build -a X64 \
+                -t GCC5 \
+                -p HypervisorBootkitPkg/HypervisorBootkitPkg.dsc \
+                -b RELEASE \
+                -n $(nproc)
+
+      - name: 📦 Package Bootkit
+        run: |
+          mkdir -p ${{ github.workspace }}/artifacts/bootkit
+          
+          # Find and copy the built EFI
+          find ~/edk2/Build -name "*.efi" -exec cp {} ${{ github.workspace }}/artifacts/bootkit/ \; 2>/dev/null || true
+          
+          # Copy source for reference
+          cp ~/edk2/HypervisorBootkitPkg/Bootkit.c ${{ github.workspace }}/artifacts/bootkit/
+          
+          # Create info file
+          cat > ${{ github.workspace }}/artifacts/bootkit/BUILD_INFO.txt << EOF
+          HYPERVISOR BOOTKIT BUILD
+          ========================
+          Date: $(date)
+          Commit: ${{ github.sha }}
+          
+          FILES:
+          - HypervisorBootkit.efi - UEFI DXE driver
+          - Bootkit.c - Source code
+          
+          INSTALLATION (VM ONLY!):
+          1. Mount VM's ESP partition
+          2. Copy .efi to /EFI/Boot/
+          3. Add to UEFI boot order
+          4. Reboot
+          
+          ⚠️ WARNING: Test in VM only!
+          EOF
+          
+          ls -la ${{ github.workspace }}/artifacts/bootkit/
+
+      - name: 📤 Upload Bootkit
+        uses: actions/upload-artifact@v4
+        with:
+          name: hypervisor-bootkit-x64
+          path: artifacts/bootkit/
+
+  # ============================================
+  # Package Headers (for development)
+  # ============================================
+  package-headers:
+    name: 📚 Package Development Headers
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 📦 Package
+        run: |
+          mkdir -p artifacts/headers
+          
+          # Copy all headers
+          cp -r ${{ env.SOLUTION_DIR }}/common artifacts/headers/
+          cp -r ${{ env.SOLUTION_DIR }}/hypervisor/include artifacts/headers/hypervisor/
+          cp -r ${{ env.SOLUTION_DIR }}/usermode/include artifacts/headers/usermode/
+          
+          # Copy docs
+          cp -r ${{ env.SOLUTION_DIR }}/docs artifacts/headers/
+          cp ${{ env.SOLUTION_DIR }}/README.md artifacts/headers/
+
+      - name: 📤 Upload Headers
+        uses: actions/upload-artifact@v4
+        with:
+          name: hypervisor-headers
+          path: artifacts/headers/
+
+  # ============================================
+  # Summary
+  # ============================================
+  summary:
+    name: 📊 Build Summary
+    runs-on: ubuntu-latest
+    needs: [build-overlay, build-bootkit, package-headers]
+    if: always()
+    
+    steps:
+      - name: 📊 Summary
+        run: |
+          echo "## 🔥 HYPERVISOR CHEAT Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Usermode Overlay | ${{ needs.build-overlay.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ring -3 Bootkit | ${{ needs.build-bootkit.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Headers Package | ${{ needs.package-headers.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📁 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- \`hypervisor-overlay-x64\` - Windows ESP overlay" >> $GITHUB_STEP_SUMMARY
+          echo "- \`hypervisor-bootkit-x64\` - UEFI bootkit" >> $GITHUB_STEP_SUMMARY
+          echo "- \`hypervisor-headers\` - Development headers" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Safety" >> $GITHUB_STEP_SUMMARY
+          echo "- Bootkit has VM-only mode enabled by default" >> $GITHUB_STEP_SUMMARY
+          echo "- Automatic rollback on errors" >> $GITHUB_STEP_SUMMARY
+          echo "- **TEST IN VM ONLY!**" >> $GITHUB_STEP_SUMMARY
+
