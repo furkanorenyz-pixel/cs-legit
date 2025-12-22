@@ -88,7 +88,7 @@ void ESP::Update() {
 }
 
 void ESP::ReadViewMatrix() {
-    uint64_t viewMatrixAddr = m_clientBase + offsets::client::dwViewMatrix;
+    uint64_t viewMatrixAddr = m_clientBase + offsets::client_dll::dwViewMatrix;
     
     hv::Hypervisor::Get().ReadMemory(
         m_gameCr3,
@@ -104,7 +104,7 @@ void ESP::ReadPlayers() {
     // Read entity list
     uint64_t entityList = hv::Read<uint64_t>(
         m_gameCr3,
-        m_clientBase + offsets::client::dwEntityList
+        m_clientBase + offsets::client_dll::dwEntityList
     );
     
     if (!entityList) return;
@@ -112,7 +112,7 @@ void ESP::ReadPlayers() {
     // Read local player controller
     uint64_t localController = hv::Read<uint64_t>(
         m_gameCr3,
-        m_clientBase + offsets::client::dwLocalPlayerController
+        m_clientBase + offsets::client_dll::dwLocalPlayerController
     );
     
     if (!localController) return;
@@ -126,7 +126,7 @@ void ESP::ReadPlayers() {
     // Get local player pawn for position
     uint64_t localPawn = hv::Read<uint64_t>(
         m_gameCr3,
-        m_clientBase + offsets::client::dwLocalPlayerPawn
+        m_clientBase + offsets::client_dll::dwLocalPlayerPawn
     );
     
     VECTOR3 localPos = {0, 0, 0};
