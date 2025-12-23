@@ -53,13 +53,29 @@ router.post('/login', (req, res) => {
         { expiresIn: '7d' }
     );
     
+    // Get license info
+    const license = db.prepare(`
+        SELECT game_id, expires_at,
+               CASE 
+                   WHEN expires_at IS NULL THEN -1
+                   ELSE CAST((julianday(expires_at) - julianday('now')) AS INTEGER)
+               END as days_remaining
+        FROM licenses 
+        WHERE user_id = ? AND game_id = 'cs2'
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+    `).get(user.id);
+    
     res.json({
         token,
         user: {
             id: user.id,
             username: user.username,
             is_admin: !!user.is_admin
-        }
+        },
+        has_license: !!license,
+        hwid_bound: !!user.hwid,
+        days_remaining: license ? license.days_remaining : 0,
+        license_expires: license ? license.expires_at : null
     });
 });
 
@@ -212,6 +228,61 @@ router.post('/verify', (req, res) => {
     } catch (err) {
         res.json({ valid: false });
     }
+});
+
+/**
+ * GET /api/auth/me
+ * Get current user info with license status
+ */
+router.get('/me', (req, res) => {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Login required' });
+    }
+    
+    const token = authHeader.substring(7);
+    let userId;
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        userId = decoded.userId;
+    } catch (err) {
+        return res.status(401).json({ error: 'Invalid token' });
+    }
+    
+    const user = db.prepare('SELECT id, username, hwid, is_admin, created_at, last_login FROM users WHERE id = ?')
+                   .get(userId);
+    
+    if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Get active licenses
+    const licenses = db.prepare(`
+        SELECT game_id, expires_at,
+               CASE 
+                   WHEN expires_at IS NULL THEN -1
+                   ELSE CAST((julianday(expires_at) - julianday('now')) AS INTEGER)
+               END as days_remaining
+        FROM licenses 
+        WHERE user_id = ? 
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+    `).all(userId);
+    
+    const hasLicense = licenses.length > 0;
+    const cs2License = licenses.find(l => l.game_id === 'cs2');
+    
+    res.json({
+        id: user.id,
+        username: user.username,
+        hwid: user.hwid,
+        hwid_bound: !!user.hwid,
+        is_admin: !!user.is_admin,
+        has_license: hasLicense,
+        licenses: licenses,
+        days_remaining: cs2License ? cs2License.days_remaining : 0,
+        license_expires: cs2License ? cs2License.expires_at : null
+    });
 });
 
 module.exports = router;

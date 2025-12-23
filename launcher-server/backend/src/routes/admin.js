@@ -176,17 +176,33 @@ router.use(requireAdmin);
  * Get dashboard statistics
  */
 router.get('/stats', (req, res) => {
-    const stats = {
-        users: db.prepare('SELECT COUNT(*) as count FROM users').get().count,
-        games: db.prepare('SELECT COUNT(*) as count FROM games').get().count,
-        licenses: db.prepare('SELECT COUNT(*) as count FROM licenses').get().count,
-        downloads_today: db.prepare(`
+    let users = 0, licenses = 0, downloads = 0;
+    
+    try {
+        users = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+    } catch (e) {}
+    
+    try {
+        licenses = db.prepare(`
+            SELECT COUNT(*) as count FROM licenses 
+            WHERE user_id IS NOT NULL 
+            AND (expires_at IS NULL OR expires_at > datetime('now'))
+        `).get().count;
+    } catch (e) {}
+    
+    try {
+        downloads = db.prepare(`
             SELECT COUNT(*) as count FROM download_logs 
             WHERE downloaded_at > datetime('now', '-1 day')
-        `).get().count
-    };
+        `).get().count;
+    } catch (e) {}
     
-    res.json(stats);
+    res.json({
+        users: users,
+        games: 1, // Only CS2 for now
+        licenses: licenses,
+        downloads_today: downloads
+    });
 });
 
 /**
@@ -541,9 +557,12 @@ router.post('/users/:id/extend', (req, res) => {
     const { game_id, days } = req.body;
     const userId = req.params.id;
     
-    if (!game_id || !days) {
+    if (!game_id || days === undefined) {
         return res.status(400).json({ error: 'game_id and days required' });
     }
+    
+    // days = 0 means lifetime
+    const isLifetime = days === 0;
     
     // Find active license for this game
     const license = db.prepare(`
@@ -554,7 +573,7 @@ router.post('/users/:id/extend', (req, res) => {
     
     if (!license) {
         // Create new license
-        const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+        const expiresAt = isLifetime ? null : new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
         const licenseKey = `ADMIN-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
         
         db.prepare(`
@@ -562,7 +581,14 @@ router.post('/users/:id/extend', (req, res) => {
             VALUES (?, ?, ?, ?)
         `).run(userId, game_id, licenseKey, expiresAt);
         
-        return res.json({ success: true, message: `Created new ${days}-day license` });
+        const msg = isLifetime ? 'Created lifetime license' : `Created ${days}-day license`;
+        return res.json({ success: true, message: msg });
+    }
+    
+    // Upgrade to lifetime
+    if (isLifetime) {
+        db.prepare('UPDATE licenses SET expires_at = NULL WHERE id = ?').run(license.id);
+        return res.json({ success: true, message: 'Upgraded to lifetime license' });
     }
     
     if (license.expires_at === null) {

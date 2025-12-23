@@ -1360,8 +1360,19 @@
                         ? `<button class="btn btn-sm btn-success" onclick="unbanUser(${user.id})">✅ Unban</button>`
                         : `<button class="btn btn-sm btn-warning" onclick="banUser(${user.id})">🚫 Ban</button>`
                     }
-                    <button class="btn btn-sm btn-success" onclick="extendUser(${user.id})">➕ Add Subscription</button>
-                    ${!user.is_admin ? `<button class="btn btn-sm btn-danger" onclick="deleteUser(${user.id})">🗑️ Delete User</button>` : ''}
+                    ${!user.is_admin ? `<button class="btn btn-sm btn-danger" onclick="deleteUser(${user.id})">🗑️ Delete</button>` : ''}
+                </div>
+                
+                <div style="background: var(--bg-input); padding: 16px; border-radius: 12px; margin-bottom: 24px;">
+                    <div style="margin-bottom: 12px; color: var(--text-secondary);">Quick Add Subscription:</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-sm btn-success" onclick="quickExtend(${user.id}, 1)">+1 Day</button>
+                        <button class="btn btn-sm btn-success" onclick="quickExtend(${user.id}, 7)">+7 Days</button>
+                        <button class="btn btn-sm btn-success" onclick="quickExtend(${user.id}, 30)">+30 Days</button>
+                        <button class="btn btn-sm btn-success" onclick="quickExtend(${user.id}, 90)">+90 Days</button>
+                        <button class="btn btn-sm btn-success" onclick="quickExtend(${user.id}, 365)">+1 Year</button>
+                        <button class="btn btn-sm btn-info" onclick="quickExtend(${user.id}, 0)">♾️ Lifetime</button>
+                    </div>
                 </div>
                 
                 <h3 style="margin-bottom: 16px;">📜 Licenses</h3>
@@ -1426,17 +1437,30 @@
             loadStats();
         }
 
-        async function extendUser(userId) {
-            const game_id = prompt('Game ID (cs2):') || 'cs2';
-            const days = prompt('Days to add:');
-            if (!days || isNaN(days)) return;
+        async function extendUser(userId, days = null) {
+            if (days === null) {
+                // Show extend options
+                const choice = prompt('Days to add (1, 7, 30, 90, 365, or 0 for lifetime):');
+                if (choice === null) return;
+                days = parseInt(choice);
+                if (isNaN(days)) return;
+            }
             
             const res = await api('POST', `/api/admin/users/${userId}/extend`, { 
-                game_id, 
-                days: parseInt(days) 
+                game_id: 'cs2', 
+                days: days 
             });
             
             showToast(res.message || 'Subscription updated', 'success');
+            openUserModal(userId);
+        }
+        
+        async function quickExtend(userId, days) {
+            const res = await api('POST', `/api/admin/users/${userId}/extend`, { 
+                game_id: 'cs2', 
+                days: days 
+            });
+            showToast(res.message || `Added ${days} days`, 'success');
             openUserModal(userId);
         }
 
