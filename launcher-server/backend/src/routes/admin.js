@@ -13,6 +13,20 @@ const { authenticate, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 const STORAGE_PATH = process.env.STORAGE_PATH || '../storage';
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-32-byte-key-change-me!!';
+const CI_API_KEY = process.env.CI_API_KEY || 'change-this-ci-api-key';
+
+/**
+ * Middleware: Verify CI API Key (for GitHub Actions)
+ */
+function verifyCiApiKey(req, res, next) {
+    const apiKey = req.headers['x-ci-api-key'];
+    
+    if (!apiKey || apiKey !== CI_API_KEY) {
+        return res.status(401).json({ error: 'Invalid CI API key' });
+    }
+    
+    next();
+}
 
 // File upload config
 const storage = multer.diskStorage({
@@ -202,6 +216,111 @@ router.post('/offsets/:game', (req, res) => {
 router.delete('/users/:id/hwid', (req, res) => {
     db.prepare('UPDATE users SET hwid = NULL WHERE id = ?').run(req.params.id);
     res.json({ message: 'HWID reset' });
+});
+
+// ============================================
+// CI/CD Endpoints (GitHub Actions)
+// These use API key instead of JWT
+// ============================================
+
+/**
+ * POST /api/admin/ci/upload
+ * Upload build from GitHub Actions
+ * Headers: X-CI-API-KEY
+ */
+router.post('/ci/upload', verifyCiApiKey, upload.single('file'), (req, res) => {
+    const { game_id, version, changelog, commit_sha } = req.body;
+    
+    if (!game_id || !version || !req.file) {
+        return res.status(400).json({ error: 'game_id, version, and file required' });
+    }
+    
+    try {
+        // Encrypt file
+        const encryptedPath = req.file.path + '.enc';
+        encryptFile(req.file.path, encryptedPath);
+        
+        // Remove unencrypted file
+        fs.unlinkSync(req.file.path);
+        
+        // Compute hash
+        const hash = crypto.createHash('sha256')
+                           .update(fs.readFileSync(encryptedPath))
+                           .digest('hex');
+        
+        // Store relative path
+        const relativePath = path.relative(STORAGE_PATH, encryptedPath);
+        
+        // Check if version exists
+        const existing = db.prepare('SELECT id FROM versions WHERE game_id = ? AND version = ?')
+                           .get(game_id, version);
+        
+        if (existing) {
+            // Update existing version
+            db.prepare(`
+                UPDATE versions SET file_path = ?, file_hash = ?, changelog = ?
+                WHERE game_id = ? AND version = ?
+            `).run(relativePath, hash, changelog || '', game_id, version);
+        } else {
+            // Insert new version
+            db.prepare(`
+                INSERT INTO versions (game_id, version, changelog, file_path, file_hash)
+                VALUES (?, ?, ?, ?, ?)
+            `).run(game_id, version, changelog || '', relativePath, hash);
+        }
+        
+        // Update latest version
+        db.prepare('UPDATE games SET latest_version = ? WHERE id = ?')
+          .run(version, game_id);
+        
+        console.log(`[CI] Uploaded ${game_id} v${version} (${commit_sha || 'no-sha'})`);
+        
+        res.status(201).json({
+            success: true,
+            message: 'Build uploaded',
+            game_id,
+            version,
+            hash,
+            commit_sha
+        });
+    } catch (err) {
+        console.error('[CI] Upload error:', err);
+        res.status(500).json({ error: 'Upload failed: ' + err.message });
+    }
+});
+
+/**
+ * POST /api/admin/ci/offsets
+ * Update offsets from GitHub Actions
+ */
+router.post('/ci/offsets/:game', verifyCiApiKey, (req, res) => {
+    const { game } = req.params;
+    const offsets = req.body;
+    
+    try {
+        const offsetsDir = path.join(STORAGE_PATH, 'offsets');
+        fs.mkdirSync(offsetsDir, { recursive: true });
+        
+        const offsetsPath = path.join(offsetsDir, `${game}.json`);
+        fs.writeFileSync(offsetsPath, JSON.stringify(offsets, null, 2));
+        
+        console.log(`[CI] Updated offsets for ${game}`);
+        res.json({ success: true, message: 'Offsets updated', game });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to update offsets' });
+    }
+});
+
+/**
+ * GET /api/admin/ci/status
+ * Check CI API status
+ */
+router.get('/ci/status', verifyCiApiKey, (req, res) => {
+    res.json({ 
+        status: 'ok',
+        message: 'CI API is working',
+        timestamp: new Date().toISOString()
+    });
 });
 
 module.exports = router;

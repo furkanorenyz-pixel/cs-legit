@@ -1,6 +1,6 @@
 /*
- * EXTERNAL ESP - Premium Launcher v1.0.0
- * CS2 Enhancement Suite
+ * EXTERNAL ESP - Premium Launcher v2.0.0
+ * With Server Authentication & Auto-Update
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -14,6 +14,7 @@
 #include <chrono>
 #include <thread>
 #include <cmath>
+#include <fstream>
 
 #pragma comment(lib, "dwmapi.lib")
 
@@ -29,8 +30,25 @@
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 #include "xorstr.hpp"
+#include "api.hpp"
 
 namespace fs = std::filesystem;
+
+// ============================================
+// App State
+// ============================================
+enum class AppScreen {
+    Login,
+    Main
+};
+
+AppScreen g_currentScreen = AppScreen::Login;
+char g_username[64] = "";
+char g_password[64] = "";
+std::string g_loginError = "";
+bool g_isLoggingIn = false;
+float g_downloadProgress = 0.0f;
+bool g_isDownloading = false;
 
 // ============================================
 // Premium Color Palette
@@ -136,11 +154,59 @@ bool CheckUpdates(const std::string& cheatFile) {
 }
 
 void Launch() {
-    if (g_isLaunching) return;
+    if (g_isLaunching || g_isDownloading) return;
     
+    std::string gameId = "cs2";
     std::string target = g_isExternal ? XString("externa.exe") : XString("injector.exe");
     
-    if (!CheckUpdates(target)) return;
+    // Check if we have license
+    if (!api::Client::Get().HasLicense(gameId)) {
+        g_statusMsg = XString("No license! Contact admin.");
+        g_statusColor = colors::danger;
+        return;
+    }
+    
+    // Check if file exists or needs update
+    bool needsDownload = !fs::exists(target);
+    
+    if (!needsDownload) {
+        // Check for updates
+        std::string currentVersion = "1.0.0"; // TODO: read from file
+        needsDownload = api::Client::Get().CheckUpdate(gameId, currentVersion);
+    }
+    
+    if (needsDownload) {
+        g_isDownloading = true;
+        g_statusMsg = XString("Downloading update...");
+        g_statusColor = colors::accent;
+        
+        std::thread([target, gameId]() {
+            bool success = api::Client::Get().DownloadCheat(gameId, target, 
+                [](const api::DownloadProgress& p) {
+                    g_downloadProgress = p.percent;
+                });
+            
+            g_isDownloading = false;
+            
+            if (success) {
+                g_statusMsg = XString("Download complete!");
+                g_statusColor = colors::success;
+                
+                // Also update offsets
+                std::string offsets = api::Client::Get().GetOffsets(gameId);
+                if (!offsets.empty()) {
+                    std::ofstream file("offsets.json");
+                    file << offsets;
+                    file.close();
+                }
+            } else {
+                g_statusMsg = XString("Download failed!");
+                g_statusColor = colors::danger;
+            }
+        }).detach();
+        
+        return;
+    }
 
     g_isLaunching = true;
     g_statusMsg = XString("Launching...");
@@ -165,6 +231,41 @@ void Launch() {
         g_statusMsg = XString("Launch failed - run as admin?");
         g_statusColor = colors::danger;
         g_isLaunching = false;
+    }
+}
+
+// ============================================
+// Login Functions
+// ============================================
+void DoLogin() {
+    if (g_isLoggingIn) return;
+    if (strlen(g_username) == 0 || strlen(g_password) == 0) {
+        g_loginError = "Enter username and password";
+        return;
+    }
+    
+    g_isLoggingIn = true;
+    g_loginError = "";
+    
+    std::thread([]() {
+        auto result = api::Client::Get().Login(g_username, g_password);
+        
+        g_isLoggingIn = false;
+        
+        if (result.success) {
+            g_currentScreen = AppScreen::Main;
+            // Load games
+            api::Client::Get().GetGames();
+        } else {
+            g_loginError = result.error;
+        }
+    }).detach();
+}
+
+void TryAutoLogin() {
+    if (api::Client::Get().LoadSession()) {
+        g_currentScreen = AppScreen::Main;
+        api::Client::Get().GetGames();
     }
 }
 
@@ -451,7 +552,77 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 // ============================================
 // Main
 // ============================================
+// Draw Login Screen
+void DrawLoginScreen(ImDrawList* draw, ImVec2 winPos, ImVec2 winSize) {
+    // Title
+    const char* titleText = XString("LOGIN");
+    ImGui::SetWindowFontScale(2.0f);
+    ImVec2 titleSize = ImGui::CalcTextSize(titleText);
+    ImVec2 titlePos = ImVec2(winPos.x + (winSize.x - titleSize.x) / 2, winPos.y + 60);
+    
+    ImGui::SetCursorScreenPos(titlePos);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 1.0f, 1.0f));
+    ImGui::Text("%s", titleText);
+    ImGui::PopStyleColor();
+    ImGui::SetWindowFontScale(1.0f);
+    
+    // Username input
+    float inputWidth = 280;
+    float inputX = winPos.x + (winSize.x - inputWidth) / 2;
+    float inputY = winPos.y + 130;
+    
+    ImGui::SetCursorScreenPos(ImVec2(inputX, inputY));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(15, 12));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.15f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.15f, 0.15f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.25f, 0.45f, 1.0f));
+    ImGui::PushItemWidth(inputWidth);
+    
+    ImGui::InputTextWithHint("##username", "Username", g_username, sizeof(g_username));
+    
+    // Password input
+    ImGui::SetCursorScreenPos(ImVec2(inputX, inputY + 55));
+    ImGui::InputTextWithHint("##password", "Password", g_password, sizeof(g_password), 
+        ImGuiInputTextFlags_Password);
+    
+    ImGui::PopItemWidth();
+    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar(2);
+    
+    // Error message
+    if (!g_loginError.empty()) {
+        ImVec2 errorSize = ImGui::CalcTextSize(g_loginError.c_str());
+        ImGui::SetCursorScreenPos(ImVec2(winPos.x + (winSize.x - errorSize.x) / 2, inputY + 115));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+        ImGui::Text("%s", g_loginError.c_str());
+        ImGui::PopStyleColor();
+    }
+    
+    // Login button
+    float buttonY = inputY + 145;
+    if (ui::DrawPremiumButton(draw, 
+        g_isLoggingIn ? XString("LOGGING IN...") : XString("LOGIN"),
+        ImVec2(inputX, buttonY), ImVec2(inputWidth, 48), g_isLoggingIn)) {
+        DoLogin();
+    }
+    
+    // Enter key to login
+    if (ImGui::IsKeyPressed(ImGuiKey_Enter) && !g_isLoggingIn) {
+        DoLogin();
+    }
+    
+    // Server status
+    ImGui::SetCursorScreenPos(ImVec2(winPos.x + 20, winPos.y + winSize.y - 30));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.4f, 0.5f, 1.0f));
+    ImGui::Text("Server: %s", "138.124.0.8");
+    ImGui::PopStyleColor();
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
+    // Try auto login from saved session
+    TryAutoLogin();
+    
     // Random window title for stealth
     std::string title = RandomString(12);
     
@@ -574,7 +745,38 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         if (minHovered && ImGui::IsMouseClicked(0)) ShowWindow(hwnd, SW_MINIMIZE);
         
         // Version badge
-        ui::DrawVersionBadge(draw, ImVec2(winPos.x + 15, winPos.y + 12), XString("v1.0.0"));
+        ui::DrawVersionBadge(draw, ImVec2(winPos.x + 15, winPos.y + 12), XString("v2.0.0"));
+        
+        // ========== SCREEN SWITCH ==========
+        if (g_currentScreen == AppScreen::Login) {
+            DrawLoginScreen(draw, winPos, winSize);
+            ImGui::End();
+            
+            // Render
+            ImGui::Render();
+            float clear_color[] = { 18.0f/255.0f, 16.0f/255.0f, 28.0f/255.0f, 1.0f };
+            g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
+            g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color);
+            ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+            g_pSwapChain->Present(1, 0);
+            continue;
+        }
+        
+        // Logout button (top left, after version badge)
+        ImVec2 logoutPos = ImVec2(winPos.x + 85, winPos.y + 12);
+        bool logoutHovered = ImGui::IsMouseHoveringRect(logoutPos, ImVec2(logoutPos.x + 50, logoutPos.y + 22));
+        draw->AddRectFilled(logoutPos, ImVec2(logoutPos.x + 50, logoutPos.y + 22),
+            logoutHovered ? IM_COL32(80, 60, 100, 255) : IM_COL32(50, 50, 70, 200), 4.0f);
+        ImGui::SetCursorScreenPos(ImVec2(logoutPos.x + 8, logoutPos.y + 4));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.8f, 1.0f));
+        ImGui::Text("Logout");
+        ImGui::PopStyleColor();
+        if (logoutHovered && ImGui::IsMouseClicked(0)) {
+            api::Client::Get().Logout();
+            g_currentScreen = AppScreen::Login;
+            g_username[0] = 0;
+            g_password[0] = 0;
+        }
         
         // ========== TITLE ==========
         const char* titleText = XString("EXTERNAL");
@@ -643,7 +845,45 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         
         // ========== STATUS TEXT ==========
         float statusY = buttonY + buttonHeight + 20;
-        ui::DrawStatusText(draw, ImVec2(winPos.x + 30, statusY), g_statusMsg.c_str(), g_statusColor);
+        
+        // Download progress bar
+        if (g_isDownloading) {
+            float barWidth = 280;
+            float barHeight = 6;
+            float barX = winPos.x + (winSize.x - barWidth) / 2;
+            
+            // Background
+            draw->AddRectFilled(
+                ImVec2(barX, statusY),
+                ImVec2(barX + barWidth, statusY + barHeight),
+                IM_COL32(40, 40, 50, 255), 3.0f);
+            
+            // Progress
+            float progressWidth = barWidth * (g_downloadProgress / 100.0f);
+            draw->AddRectFilled(
+                ImVec2(barX, statusY),
+                ImVec2(barX + progressWidth, statusY + barHeight),
+                colors::accent, 3.0f);
+            
+            // Percentage text
+            char progText[32];
+            snprintf(progText, sizeof(progText), "Downloading... %.0f%%", g_downloadProgress);
+            ImVec2 textSize = ImGui::CalcTextSize(progText);
+            ImGui::SetCursorScreenPos(ImVec2(winPos.x + (winSize.x - textSize.x) / 2, statusY + 12));
+            ImGui::Text("%s", progText);
+        } else {
+            ui::DrawStatusText(draw, ImVec2(winPos.x + 30, statusY), g_statusMsg.c_str(), g_statusColor);
+        }
+        
+        // User info (bottom right)
+        if (api::Client::Get().IsLoggedIn()) {
+            std::string userInfo = "User: " + api::Client::Get().GetUser().username;
+            ImVec2 userSize = ImGui::CalcTextSize(userInfo.c_str());
+            ImGui::SetCursorScreenPos(ImVec2(winPos.x + winSize.x - userSize.x - 20, winPos.y + winSize.y - 25));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.6f, 1.0f));
+            ImGui::Text("%s", userInfo.c_str());
+            ImGui::PopStyleColor();
+        }
 
         ImGui::End();
 

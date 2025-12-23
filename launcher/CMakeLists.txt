@@ -14,6 +14,7 @@ FetchContent_MakeAvailable(imgui)
 
 set(SOURCES
     src/main.cpp
+    src/api.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -28,6 +29,7 @@ add_executable(launcher WIN32 ${SOURCES})
 target_include_directories(launcher PRIVATE 
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
+    src
 )
 
 # Static link standard libraries
@@ -37,8 +39,10 @@ target_link_libraries(launcher PRIVATE
     d3d11
     d3dcompiler
     dwmapi
+    winhttp
     kernel32 
     user32 
     advapi32
     shell32
+    crypt32
 )
