@@ -3,7 +3,7 @@ project(Launcher)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Setup ImGui (using sources from extern project to save space)
+# Setup ImGui
 include(FetchContent)
 FetchContent_Declare(
   imgui
@@ -14,7 +14,6 @@ FetchContent_MakeAvailable(imgui)
 
 set(SOURCES
     src/main.cpp
-    src/api.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -23,7 +22,7 @@ set(SOURCES
     ${imgui_SOURCE_DIR}/backends/imgui_impl_dx11.cpp
 )
 
-# Use WIN32 flag to indicate a GUI application (uses WinMain instead of main)
+# GUI application (uses WinMain)
 add_executable(launcher WIN32 ${SOURCES})
 
 target_include_directories(launcher PRIVATE 
@@ -32,17 +31,16 @@ target_include_directories(launcher PRIVATE
     src
 )
 
-# Static link standard libraries
+# Static link runtime
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 target_link_libraries(launcher PRIVATE 
     d3d11
     d3dcompiler
     dwmapi
-    winhttp
+    wininet
     kernel32 
     user32 
     advapi32
     shell32
-    crypt32
 )
