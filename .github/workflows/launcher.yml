@@ -1,11 +1,20 @@
 name: 🚀 Build Launcher
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'launcher/**'
+      - 'launcher-server/launcher/**'
+      - '.github/workflows/launcher.yml'
   workflow_dispatch:
+
+env:
+  VERSION: "2.0.${{ github.run_number }}"
 
 jobs:
   build-launcher:
-    name: 🚀 LAUNCHER (GUI Manager)
+    name: 🚀 Build Launcher
     runs-on: windows-latest
 
     steps:
@@ -20,31 +29,90 @@ jobs:
     - name: ⚡ Setup Ninja
       uses: seanmiddleditch/gha-setup-ninja@v5
 
-    - name: ⚙️ Configure
+    - name: 📦 Download Dependencies (curl for Windows)
+      run: |
+        # curl is already available on windows-latest
+
+    - name: ⚙️ Configure Launcher
+      working-directory: launcher-server/launcher
       run: |
         Write-Host ""
         Write-Host "=========================================="
-        Write-Host "   LAUNCHER v1.0.0"
+        Write-Host "   LAUNCHER v${{ env.VERSION }}"
         Write-Host "=========================================="
+        
+        # Update version in code
+        $content = Get-Content -Path "src/main.cpp" -Raw
+        $content = $content -replace 'v\d+\.\d+\.\d+', "v${{ env.VERSION }}"
+        Set-Content -Path "src/main.cpp" -Value $content
+        
         cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-    - name: 🔨 Build Launcher
-      run: cmake --build build --target launcher --config Release
+    - name: 🔨 Build
+      working-directory: launcher-server/launcher
+      run: cmake --build build --config Release
 
-    - name: ✅ Verify
+    - name: ✅ Verify Build
+      working-directory: launcher-server/launcher
       run: |
         Write-Host ""
         Write-Host "=========================================="
         Write-Host "   BUILD SUCCESS"
         Write-Host "=========================================="
-        Get-ChildItem -Path build -Recurse -Include *.exe | ForEach-Object {
-          $size = [math]::Round($_.Length / 1KB, 2)
-          Write-Host "   $($_.Name): $size KB"
+        
+        if (Test-Path "build/launcher.exe") {
+          $size = [math]::Round((Get-Item "build/launcher.exe").Length / 1KB, 2)
+          Write-Host "   launcher.exe: $size KB"
+        } else {
+          Write-Host "Looking for exe files..."
+          Get-ChildItem -Path build -Recurse -Include *.exe | ForEach-Object {
+            $size = [math]::Round($_.Length / 1KB, 2)
+            Write-Host "   $($_.Name): $size KB"
+          }
         }
-    
-    - name: 📦 Upload
+
+    - name: 📤 Upload to Server
+      if: success() && github.ref == 'refs/heads/main'
+      working-directory: launcher-server/launcher
+      env:
+        SERVER_URL: ${{ secrets.SERVER_URL }}
+        CI_API_KEY: ${{ secrets.CI_API_KEY }}
+      run: |
+        Write-Host "Uploading to server..."
+        
+        # Find the exe
+        $exe = Get-ChildItem -Path build -Recurse -Include *.exe | Select-Object -First 1
+        
+        if ($exe) {
+          # Create version info
+          $versionJson = @{
+            version = "${{ env.VERSION }}"
+            build = ${{ github.run_number }}
+            commit = "${{ github.sha }}"
+            date = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+          } | ConvertTo-Json
+          
+          $versionJson | Out-File -FilePath "build/version.json" -Encoding UTF8
+          
+          # Upload using curl
+          curl.exe -X POST "$env:SERVER_URL/api/admin/ci/upload" `
+            -H "X-CI-API-Key: $env:CI_API_KEY" `
+            -F "game_id=launcher" `
+            -F "file_type=launcher" `
+            -F "version=${{ env.VERSION }}" `
+            -F "file=@$($exe.FullName)"
+            
+          Write-Host "✅ Uploaded to server!"
+        } else {
+          Write-Host "❌ No exe found to upload"
+          exit 1
+        }
+
+    - name: 📦 Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Launcher-${{ github.run_number }}
-        path: build/launcher/*.exe
+        name: Launcher-v${{ env.VERSION }}
+        path: |
+          launcher-server/launcher/build/*.exe
+          launcher-server/launcher/build/version.json
         retention-days: 30

@@ -1,7 +1,15 @@
 name: 🔓 Build External
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'externa/**'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
+
+env:
+  VERSION: "1.0.${{ github.run_number }}"
 
 jobs:
   build-external:
@@ -34,7 +42,7 @@ jobs:
         run: |
           Write-Host ""
           Write-Host "=========================================="
-          Write-Host "   EXTERNAL ESP v1.0.0"
+          Write-Host "   EXTERNAL ESP v${{ env.VERSION }}"
           Write-Host "=========================================="
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
       
@@ -58,10 +66,47 @@ jobs:
             Write-Error "Build failed!"
             exit 1
           }
+
+      - name: 📤 Upload to Server
+        if: success() && github.ref == 'refs/heads/main'
+        working-directory: externa
+        env:
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+          CI_API_KEY: ${{ secrets.CI_API_KEY }}
+        run: |
+          Write-Host "Uploading to server..."
+          
+          $exe = Get-ChildItem -Path build -Filter "*.exe" | Select-Object -First 1
+          
+          if ($exe) {
+            # Create version info
+            $versionJson = @{
+              version = "${{ env.VERSION }}"
+              build = ${{ github.run_number }}
+              commit = "${{ github.sha }}"
+              date = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+            } | ConvertTo-Json
+            
+            $versionJson | Out-File -FilePath "build/version.json" -Encoding UTF8
+            
+            curl.exe -X POST "$env:SERVER_URL/api/admin/ci/upload" `
+              -H "X-CI-API-Key: $env:CI_API_KEY" `
+              -F "game_id=cs2" `
+              -F "file_type=externa" `
+              -F "version=${{ env.VERSION }}" `
+              -F "file=@$($exe.FullName)"
+              
+            Write-Host "✅ Uploaded to server!"
+          } else {
+            Write-Host "❌ No exe found"
+            exit 1
+          }
       
-      - name: 📦 Upload
+      - name: 📦 Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: External-${{ github.run_number }}
-          path: externa/build/*.exe
+          name: External-v${{ env.VERSION }}
+          path: |
+            externa/build/*.exe
+            externa/build/version.json
           retention-days: 30
