@@ -94,20 +94,83 @@ router.get('/:game/:version', authenticate, verifyHwid, (req, res) => {
 });
 
 /**
- * GET /api/download/:game/latest
- * Download latest version
+ * GET /api/download/:game/external
+ * Download latest external cheat
  */
-router.get('/:game/latest', authenticate, verifyHwid, (req, res) => {
+router.get('/:game/external', authenticate, (req, res) => {
     const { game } = req.params;
     
-    const gameInfo = db.prepare('SELECT latest_version FROM games WHERE id = ?').get(game);
+    // Check license
+    const license = db.prepare(`
+        SELECT * FROM licenses 
+        WHERE user_id = ? AND game_id = ? 
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+    `).get(req.user.id, game);
     
-    if (!gameInfo || !gameInfo.latest_version) {
+    if (!license) {
+        return res.status(403).json({ error: 'No valid license for this game' });
+    }
+    
+    // Find latest file in storage
+    const gameDir = path.join(__dirname, '../../storage/games', game);
+    
+    if (!fs.existsSync(gameDir)) {
         return res.status(404).json({ error: 'Game not found' });
     }
     
-    // Redirect to specific version
-    res.redirect(`/api/download/${game}/${gameInfo.latest_version}`);
+    // Get all files and find the latest
+    const files = fs.readdirSync(gameDir)
+        .filter(f => f.endsWith('.enc') || f.endsWith('.exe'))
+        .sort((a, b) => {
+            // Sort by timestamp in filename (format: version_timestamp_name.ext)
+            const tsA = parseInt(a.split('_')[1]) || 0;
+            const tsB = parseInt(b.split('_')[1]) || 0;
+            return tsB - tsA;
+        });
+    
+    if (files.length === 0) {
+        return res.status(404).json({ error: 'No files available' });
+    }
+    
+    const latestFile = files[0];
+    const filePath = path.join(gameDir, latestFile);
+    
+    console.log(`[Download] User ${req.user.id} downloading ${game}/external: ${latestFile}`);
+    
+    // Log download
+    try {
+        db.prepare(`
+            INSERT INTO download_logs (user_id, game_id, version, ip_address)
+            VALUES (?, ?, ?, ?)
+        `).run(req.user.id, game, 'external', req.ip);
+    } catch (e) {
+        // Ignore log errors
+    }
+    
+    // Decrypt and send
+    if (filePath.endsWith('.enc')) {
+        try {
+            const decrypted = decryptFile(filePath);
+            const originalName = game + '_external.exe';
+            res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+            res.setHeader('Content-Type', 'application/octet-stream');
+            res.setHeader('Content-Length', decrypted.length);
+            res.send(decrypted);
+        } catch (err) {
+            console.error('Decryption error:', err);
+            return res.status(500).json({ error: 'Download failed' });
+        }
+    } else {
+        res.download(filePath);
+    }
+});
+
+/**
+ * GET /api/download/:game/latest
+ * Download latest version (alias)
+ */
+router.get('/:game/latest', authenticate, (req, res) => {
+    res.redirect(`/api/download/${req.params.game}/external`);
 });
 
 module.exports = router;
