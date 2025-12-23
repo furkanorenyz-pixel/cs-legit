@@ -864,11 +864,19 @@ void RenderLogin() {
             ImGui::TextColored(theme::success, "%s", g_successMsg.c_str());
         }
         
-        // Register link - fixed positioning
-        ImGui::SetCursorPos(ImVec2(0, ws.y - 60));
-        ImGui::SetCursorPosX((ws.x - 200) * 0.5f);
-        ImGui::TextColored(theme::textDim, "No account?");
-        ImGui::SameLine();
+        // Version at bottom
+        ImGui::SetCursorPos(ImVec2(0, ws.y - 25));
+        std::string verText = "v" LAUNCHER_VERSION;
+        ImGui::SetCursorPosX((ws.x - ImGui::CalcTextSize(verText.c_str()).x) * 0.5f);
+        ImGui::TextColored(theme::textDim, "%s", verText.c_str());
+        
+        // Register link above version
+        ImGui::SetCursorPos(ImVec2(0, ws.y - 50));
+        std::string regText = "No account? Register";
+        float regWidth = ImGui::CalcTextSize(regText.c_str()).x;
+        ImGui::SetCursorPosX((ws.x - regWidth) * 0.5f);
+        ImGui::TextColored(theme::textDim, "No account? ");
+        ImGui::SameLine(0, 0);
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_Text, theme::accent);
         if (ImGui::SmallButton("Register")) {
@@ -878,11 +886,6 @@ void RenderLogin() {
             g_successMsg = "";
         }
         ImGui::PopStyleColor(2);
-        
-        // Version - separate line
-        ImGui::SetCursorPos(ImVec2(0, ws.y - 28));
-        ImGui::SetCursorPosX((ws.x - 60) * 0.5f);
-        ImGui::TextColored(theme::textDim, "v" LAUNCHER_VERSION);
         
         ImGui::PopStyleVar();
     }
@@ -1105,40 +1108,46 @@ void RenderMain() {
         
         GameInfo& game = g_games[g_selectedGame];
         
-        // Header with close/minimize
-        ImGui::SetCursorPos(ImVec2(ws.x - 70, 10));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.35f, 1.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-        if (ImGui::Button("_##min", ImVec2(25, 25))) {
-            ShowWindow(g_hwnd, SW_MINIMIZE);
-        }
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor(2);
+        // ===== TOP RIGHT BUTTONS (Refresh, Minimize, Close) =====
+        float btnSize = 28.0f;
+        float btnGap = 5.0f;
+        float btnY = 8.0f;
+        float btnStartX = ws.x - (btnSize * 3 + btnGap * 2 + 10);
         
-        ImGui::SetCursorPos(ImVec2(ws.x - 38, 10));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.15f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-        if (ImGui::Button("X##close", ImVec2(25, 25))) {
-            PostQuitMessage(0);
-        }
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor(2);
         
         // Refresh button
-        ImGui::SetCursorPos(ImVec2(ws.x - 105, 10));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.2f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.3f, 0.2f, 1.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-        if (ImGui::Button("@##refresh", ImVec2(25, 25))) {
+        ImGui::SetCursorPos(ImVec2(btnStartX, btnY));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.25f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.35f, 0.2f, 1.0f));
+        if (ImGui::Button("O##refresh", ImVec2(btnSize, btnSize))) {
             RefreshData();
+            FetchGameStatus();
         }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Refresh data");
-        }
-        ImGui::PopStyleVar();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Refresh");
         ImGui::PopStyleColor(2);
+        
+        // Minimize button
+        ImGui::SetCursorPos(ImVec2(btnStartX + btnSize + btnGap, btnY));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.4f, 1.0f));
+        if (ImGui::Button("-##min", ImVec2(btnSize, btnSize))) {
+            ShowWindow(g_hwnd, SW_MINIMIZE);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimize");
+        ImGui::PopStyleColor(2);
+        
+        // Close button
+        ImGui::SetCursorPos(ImVec2(btnStartX + (btnSize + btnGap) * 2, btnY));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.15f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("X##close", ImVec2(btnSize, btnSize))) {
+            PostQuitMessage(0);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Close");
+        ImGui::PopStyleColor(2);
+        
+        ImGui::PopStyleVar();
         
         // Game title
         ImGui::SetCursorPos(ImVec2(contentX, 20));
@@ -1372,6 +1381,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
             if (Protection::IsDebuggerAttached() || Protection::HasDebuggerWindows()) {
                 Protection::SecureExit(0);
             }
+        }
+        
+        // Auto-refresh data every 5 seconds (300 frames at 60fps)
+        static int statusRefreshCounter = 0;
+        if (g_currentScreen == Screen::Main && ++statusRefreshCounter > 300) {
+            statusRefreshCounter = 0;
+            FetchGameStatus();
+            FetchUserLicenses();
         }
         
         auto now = std::chrono::high_resolution_clock::now();
