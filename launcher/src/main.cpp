@@ -53,7 +53,7 @@ bool g_bypassVM = false; // Set to true for development
 #endif
 #define WINDOW_WIDTH 700
 #define WINDOW_HEIGHT 500
-// Build trigger
+// Rebuild trigger v2
 
 #define SERVER_HOST "single-project.duckdns.org"
 #define SERVER_PORT 80
