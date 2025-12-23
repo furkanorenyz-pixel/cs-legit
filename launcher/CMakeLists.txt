@@ -34,6 +34,17 @@ target_include_directories(launcher PRIVATE
 # Static link runtime
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# Version from CMake/CI
+# Если переменная LAUNCHER_VERSION не передана в CMake,
+# используем дефолтное значение для локальной сборки.
+if(NOT DEFINED LAUNCHER_VERSION)
+  set(LAUNCHER_VERSION "1.0.0-local")
+endif()
+
+message(STATUS "Launcher version: ${LAUNCHER_VERSION}")
+
+target_compile_definitions(launcher PRIVATE LAUNCHER_VERSION=\"${LAUNCHER_VERSION}\")
+
 target_link_libraries(launcher PRIVATE 
     d3d11
     d3dcompiler

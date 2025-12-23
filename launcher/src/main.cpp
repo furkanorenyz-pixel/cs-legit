@@ -45,7 +45,12 @@ bool g_bypassVM = false; // Set to true for development
 // Configuration
 // ============================================
 #define PROJECT_NAME "Single-Project"
-#define LAUNCHER_VERSION "1.0.2"
+// LAUNCHER_VERSION:
+// - In CI (GitHub Actions) comes from CMake: -DLAUNCHER_VERSION=${VERSION}
+// - For local builds we use the default value below.
+#ifndef LAUNCHER_VERSION
+#define LAUNCHER_VERSION "1.0.0-local"
+#endif
 #define WINDOW_WIDTH 700
 #define WINDOW_HEIGHT 500
 
@@ -310,10 +315,23 @@ int CompareVersions(const std::string& a, const std::string& b) {
 void CheckForUpdates() {
     std::thread([]() {
         try {
-            std::string response = HttpRequest("GET", "/api/games/launcher/version");
+            // Read launcher version from server via /api/games/status (games.launcher.version)
+            std::string response = HttpRequest("GET", "/api/games/status");
             if (response.empty()) return;
             
-            std::string serverVersion = ExtractJson(response, "version");
+            // Find launcher block and version field
+            std::string serverVersion;
+            size_t launcherPos = response.find("\"launcher\":");
+            if (launcherPos != std::string::npos) {
+                size_t verPos = response.find("\"version\":\"", launcherPos);
+                if (verPos != std::string::npos) {
+                    verPos += 11;
+                    size_t endPos = response.find("\"", verPos);
+                    if (endPos != std::string::npos) {
+                        serverVersion = response.substr(verPos, endPos - verPos);
+                    }
+                }
+            }
             if (serverVersion.empty()) return;
             
             // Compare with current version
@@ -335,7 +353,8 @@ bool DownloadUpdate() {
     HINTERNET hConnect = InternetConnectA(hInternet, SERVER_HOST, SERVER_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConnect) { InternetCloseHandle(hInternet); g_updateDownloading = false; return false; }
     
-    HINTERNET hRequest = HttpOpenRequestA(hConnect, "GET", "/api/download/launcher/latest", NULL, NULL, NULL, INTERNET_FLAG_RELOAD, 0);
+    // Download launcher from public endpoint (server decrypts .enc)
+    HINTERNET hRequest = HttpOpenRequestA(hConnect, "GET", "/api/download/launcher", NULL, NULL, NULL, INTERNET_FLAG_RELOAD, 0);
     if (!hRequest) { InternetCloseHandle(hConnect); InternetCloseHandle(hInternet); g_updateDownloading = false; return false; }
     
     if (!HttpSendRequestA(hRequest, NULL, 0, NULL, 0)) {
@@ -935,9 +954,14 @@ void RenderLogin() {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImVec2 ws = ImGui::GetIO().DisplaySize;
     
+    // Background: soft radial gradient (website-like)
     dl->AddRectFilledMultiColor(ImVec2(0, 0), ws, 
-        IM_COL32(10, 10, 18, 255), IM_COL32(10, 10, 18, 255),
-        IM_COL32(5, 5, 10, 255), IM_COL32(5, 5, 10, 255));
+        IM_COL32(8, 8, 16, 255), IM_COL32(8, 8, 16, 255),
+        IM_COL32(4, 4, 10, 255), IM_COL32(4, 4, 10, 255));
+    
+    // Subtle diagonal glow
+    dl->AddRectFilled(ImVec2(0, 0), ImVec2(ws.x, ws.y * 0.5f),
+        IM_COL32(40, 20, 80, 40));
     
     g_fadeAlpha = fminf(g_fadeAlpha + ImGui::GetIO().DeltaTime * 3.0f, 1.0f);
     
@@ -954,21 +978,41 @@ void RenderLogin() {
         // Window controls
         DrawWindowControls(dl, ws);
         
-        // Logo + Project name (Higher up)
-        dl->AddCircleFilled(ImVec2(ws.x * 0.5f, 70), 32.0f, theme::gradientA, 32);
+        // Logo + Project name (Higher up) with halo
+        ImVec2 logoCenter(ws.x * 0.5f, 70);
+        for (int r = 42; r >= 34; r -= 2) {
+            dl->AddCircleFilled(logoCenter, (float)r, IM_COL32(70, 40, 120, (42 - r) * 4), 48);
+        }
+        dl->AddCircleFilled(logoCenter, 32.0f, theme::gradientA, 32);
         
         ImGui::SetCursorPos(ImVec2(0, 115));
         float tw = ImGui::CalcTextSize(PROJECT_NAME).x;
         ImGui::SetCursorPosX((ws.x - tw) * 0.5f);
         ImGui::TextColored(theme::text, PROJECT_NAME);
         
-        ImGui::SetCursorPosX((ws.x - ImGui::CalcTextSize("Sign in to continue").x) * 0.5f);
+        ImVec2 subSize = ImGui::CalcTextSize("Sign in to continue");
+        ImGui::SetCursorPosX((ws.x - subSize.x) * 0.5f);
         ImGui::TextColored(theme::textDim, "Sign in to continue");
         
-        ImGui::Dummy(ImVec2(0, 15));
+        ImGui::Dummy(ImVec2(0, 10));
+        
+        // Semi-transparent form card (like a section on the website)
+        float cardWidth = w + 60.0f;
+        ImVec2 cardPos((ws.x - cardWidth) * 0.5f, 135.0f);
+        ImVec2 cardSize(cardWidth, 235.0f);
+        dl->AddRectFilled(cardPos, ImVec2(cardPos.x + cardSize.x, cardPos.y + cardSize.y),
+            IM_COL32(12, 12, 22, 230), 18.0f);
+        dl->AddRect(cardPos, ImVec2(cardPos.x + cardSize.x, cardPos.y + cardSize.y),
+            IM_COL32(90, 70, 160, 180), 18.0f);
+        
+        // Thin accent line on top of the card
+        dl->AddRectFilled(ImVec2(cardPos.x + 16, cardPos.y + 4),
+                          ImVec2(cardPos.x + cardSize.x - 16, cardPos.y + 6),
+                          theme::gradientA, 3.0f);
         
         // Inputs (Reduced spacing)
         ImGui::SetCursorPosX(x);
+        ImGui::SetCursorPosY(150.0f);
         ImGui::TextColored(theme::textSec, "Username");
         ImGui::SetCursorPosX(x);
         ImGui::SetNextItemWidth(w);
@@ -1135,19 +1179,25 @@ void RenderMain() {
     
     g_fadeAlpha = fminf(g_fadeAlpha + ImGui::GetIO().DeltaTime * 3.0f, 1.0f);
     
-    // Background with subtle gradient
-    for (int y = 0; y < (int)ws.y; y += 4) {
+    // Background: deep gradient with subtle purple glow
+    for (int y = 0; y < (int)ws.y; y += 3) {
         float t = (float)y / ws.y;
-        dl->AddRectFilled(ImVec2(0, (float)y), ImVec2(ws.x, (float)y + 4),
-            IM_COL32(8 + (int)(t * 4), 8 + (int)(t * 3), 14 + (int)(t * 6), 255));
+        dl->AddRectFilled(ImVec2(0, (float)y), ImVec2(ws.x, (float)y + 3),
+            IM_COL32(6 + (int)(t * 6), 6 + (int)(t * 4), 12 + (int)(t * 10), 255));
     }
+    // Diagonal soft highlight on top (website-like)
+    dl->AddRectFilledMultiColor(
+        ImVec2(0, 0), ImVec2(ws.x, ws.y * 0.5f),
+        IM_COL32(40, 20, 80, 90), IM_COL32(20, 30, 90, 60),
+        IM_COL32(10, 10, 30, 0),  IM_COL32(10, 10, 30, 0)
+    );
     
-    // Sidebar with gradient
+    // Sidebar with gradient (slightly more "glass-like")
     float sidebarW = 185.0f;
     for (int y = 0; y < (int)ws.y; y += 3) {
         float t = (float)y / ws.y;
         dl->AddRectFilled(ImVec2(0, (float)y), ImVec2(sidebarW, (float)y + 3),
-            IM_COL32(14 + (int)(t * 3), 14 + (int)(t * 2), 22 + (int)(t * 5), 255));
+            IM_COL32(14 + (int)(t * 4), 14 + (int)(t * 3), 24 + (int)(t * 7), 235));
     }
     // Sidebar border with glow
     dl->AddRectFilledMultiColor(ImVec2(sidebarW - 2, 0), ImVec2(sidebarW, ws.y),
@@ -1318,6 +1368,14 @@ void RenderMain() {
         float contentW = ws.x - sidebarW - 50;
         
         GameInfo& game = g_games[g_selectedGame];
+
+        // Large "glass" panel behind main content (like a section on the website)
+        ImVec2 panelPos(contentX - 15.0f, 82.0f);
+        ImVec2 panelSize(contentW + 30.0f, ws.y - 120.0f);
+        dl->AddRectFilled(panelPos, ImVec2(panelPos.x + panelSize.x, panelPos.y + panelSize.y),
+            IM_COL32(10, 10, 20, 210), 22.0f);
+        dl->AddRect(panelPos, ImVec2(panelPos.x + panelSize.x, panelPos.y + panelSize.y),
+            IM_COL32(90, 70, 160, 160), 22.0f);
         
         // ===== TOP BAR =====
         // Gradient header background
