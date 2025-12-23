@@ -145,6 +145,7 @@ const { startMonitoring } = require('./services/telegramMonitor');
 app.listen(PORT, HOST, () => {
     console.log(`🚀 Launcher Server running on http://${HOST}:${PORT}`);
     console.log(`📁 Storage: ${path.resolve(process.env.STORAGE_PATH || '../storage')}`);
+    console.log(`🌐 Public website: http://single-project.duckdns.org`);
     
     // Start monitoring @cstwoupdate for CS2 updates
     startMonitoring();
