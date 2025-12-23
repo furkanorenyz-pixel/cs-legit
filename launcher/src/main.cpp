@@ -1177,7 +1177,8 @@ void RenderMain() {
         
         // User avatar
         dl->AddCircleFilled(ImVec2(userCardPos.x + 22, userCardPos.y + 24), 12, IM_COL32(100, 80, 160, 255), 20);
-        dl->AddText(ImVec2(userCardPos.x + 18, userCardPos.y + 16), IM_COL32(255, 255, 255, 255), "👤");
+        // User icon (simple circle with letter)
+        dl->AddText(ImVec2(userCardPos.x + 18, userCardPos.y + 16), IM_COL32(255, 255, 255, 255), "U");
         
         ImGui::SetCursorPos(ImVec2(userCardPos.x + 42, userCardPos.y + 8));
         ImGui::TextColored(theme::textDim, "Welcome");
@@ -1187,7 +1188,7 @@ void RenderMain() {
         
         // Games section header
         ImGui::SetCursorPos(ImVec2(12, 122));
-        ImGui::TextColored(theme::textDim, "⎯ GAMES ⎯");
+        ImGui::TextColored(theme::textDim, "-- GAMES --");
         
         float gameY = 145;
         for (int i = 0; i < (int)g_games.size(); i++) {
@@ -1284,9 +1285,9 @@ void RenderMain() {
         dl->AddRect(logoutPos, ImVec2(logoutPos.x + logoutSize.x, logoutPos.y + logoutSize.y),
             IM_COL32(120, 60, 60, logoutHovered ? 150 : 80), 10.0f);
         
-        ImVec2 logoutText = ImGui::CalcTextSize("↩ Logout");
+        ImVec2 logoutText = ImGui::CalcTextSize("< Logout");
         dl->AddText(ImVec2(logoutPos.x + (logoutSize.x - logoutText.x) * 0.5f, logoutPos.y + 12),
-            IM_COL32(255, 180, 180, 255), "↩ Logout");
+            IM_COL32(255, 180, 180, 255), "< Logout");
         
         ImGui::SetCursorPos(logoutPos);
         if (ImGui::InvisibleButton("##logout", logoutSize)) {
@@ -1334,7 +1335,7 @@ void RenderMain() {
         ImGui::SetCursorPos(ImVec2(ws.x - 110, btnY));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.22f, 0.18f, 0.9f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.40f, 0.25f, 1.0f));
-        if (ImGui::Button("↻##ref", ImVec2(btnSize, btnSize))) { RefreshData(); FetchGameStatus(); }
+        if (ImGui::Button("@##ref", ImVec2(btnSize, btnSize))) { RefreshData(); FetchGameStatus(); }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Refresh");
         ImGui::PopStyleColor(2);
         
@@ -1342,14 +1343,14 @@ void RenderMain() {
         ImGui::SetCursorPos(ImVec2(ws.x - 78, btnY));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.22f, 0.28f, 0.9f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.35f, 0.45f, 1.0f));
-        if (ImGui::Button("–##min", ImVec2(btnSize, btnSize))) { ShowWindow(g_hwnd, SW_MINIMIZE); }
+        if (ImGui::Button("_##min", ImVec2(btnSize, btnSize))) { ShowWindow(g_hwnd, SW_MINIMIZE); }
         ImGui::PopStyleColor(2);
         
         // Close
         ImGui::SetCursorPos(ImVec2(ws.x - 46, btnY));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.18f, 0.18f, 0.9f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.25f, 0.25f, 1.0f));
-        if (ImGui::Button("✕##cls", ImVec2(btnSize, btnSize))) { PostQuitMessage(0); }
+        if (ImGui::Button("X##cls", ImVec2(btnSize, btnSize))) { PostQuitMessage(0); }
         ImGui::PopStyleColor(2);
         
         ImGui::PopStyleVar();
@@ -1383,16 +1384,16 @@ void RenderMain() {
         const char* statusText;
         if (g_gameStatus == "operational") {
             statusCol = ImVec4(0.15f, 0.85f, 0.45f, 1.0f);
-            statusText = "● ONLINE";
+            statusText = "ONLINE";
         } else if (g_gameStatus == "updating") {
             statusCol = ImVec4(1.0f, 0.75f, 0.0f, 1.0f);
-            statusText = "◐ UPDATING";
+            statusText = "UPDATING";
         } else if (g_gameStatus == "offline") {
             statusCol = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
-            statusText = "○ OFFLINE";
+            statusText = "OFFLINE";
         } else {
             statusCol = ImVec4(0.5f, 0.5f, 0.55f, 1.0f);
-            statusText = "? UNKNOWN";
+            statusText = "UNKNOWN";
         }
         
         ImGui::TextColored(statusCol, "%s", statusText);
@@ -1425,7 +1426,7 @@ void RenderMain() {
         dl->AddCircleFilled(ImVec2(licIconX, licIconY), 18, 
             game.hasLicense ? IM_COL32(40, 180, 100, 255) : IM_COL32(180, 60, 60, 255), 24);
         dl->AddText(ImVec2(licIconX - 6, licIconY - 8), IM_COL32(255, 255, 255, 255), 
-            game.hasLicense ? "✓" : "✗");
+            game.hasLicense ? "+" : "-");
         
         ImGui::SetCursorPos(ImVec2(licPos.x + 58, licPos.y + 16));
         ImGui::TextColored(theme::textSec, "LICENSE STATUS");
@@ -1435,7 +1436,7 @@ void RenderMain() {
             ImGui::TextColored(theme::success, "ACTIVE");
             ImGui::SameLine();
             if (game.daysRemaining < 0) {
-                ImGui::TextColored(ImVec4(0.9f, 0.75f, 0.3f, 1.0f), "∞ LIFETIME");
+                ImGui::TextColored(ImVec4(0.9f, 0.75f, 0.3f, 1.0f), "LIFETIME");
             } else {
                 ImGui::TextColored(theme::text, "%d days remaining", game.daysRemaining);
             }
@@ -1476,7 +1477,7 @@ void RenderMain() {
                 IM_COL32(140, 90, 200, 60), cardRadius);
             
             ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 12));
-            ImGui::TextColored(theme::accent, "🔑 ACTIVATE LICENSE");
+            ImGui::TextColored(theme::accent, "ACTIVATE LICENSE");
             
             ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 38));
             ImGui::SetNextItemWidth(actSize.x - 140);
@@ -1602,7 +1603,7 @@ void RenderMain() {
                     IM_COL32(180, 140, 255, (int)(60 + pulse * 40)), 12.0f, 0, 2.0f);
             }
             
-            const char* btnText = g_cheatRunning ? "◉ RUNNING" : (canLaunch ? "▶ LAUNCH" : "LAUNCH");
+            const char* btnText = g_cheatRunning ? "RUNNING" : (canLaunch ? "> LAUNCH" : "LAUNCH");
             ImVec2 textSize = ImGui::CalcTextSize(btnText);
             dl->AddText(ImVec2(launchPos.x + (launchSize.x - textSize.x) * 0.5f, launchPos.y + 18),
                 canLaunch ? IM_COL32(255, 255, 255, 255) : IM_COL32(120, 120, 140, 255), btnText);
@@ -1621,14 +1622,14 @@ void RenderMain() {
             dl->AddRectFilled(msgPos, ImVec2(msgPos.x + contentW, msgPos.y + 30),
                 IM_COL32(80, 30, 30, 200), 8.0f);
             ImGui::SetCursorPos(ImVec2(msgPos.x + 12, msgPos.y + 6));
-            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.6f, 1.0f), "⚠ %s", g_errorMsg.c_str());
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.6f, 1.0f), "! %s", g_errorMsg.c_str());
         }
         if (!g_successMsg.empty()) {
             ImVec2 msgPos(contentX, cardY);
             dl->AddRectFilled(msgPos, ImVec2(msgPos.x + contentW, msgPos.y + 30),
                 IM_COL32(30, 80, 50, 200), 8.0f);
             ImGui::SetCursorPos(ImVec2(msgPos.x + 12, msgPos.y + 6));
-            ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.7f, 1.0f), "✓ %s", g_successMsg.c_str());
+            ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.7f, 1.0f), "%s", g_successMsg.c_str());
         }
         
         // Footer with gradient line
@@ -1643,45 +1644,57 @@ void RenderMain() {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.55f, 0.45f, 0.80f, 0.8f), " v" LAUNCHER_VERSION);
         
-        // ===== UPDATE NOTIFICATION =====
+        // ===== FORCED UPDATE NOTIFICATION =====
         if (g_updateAvailable && !g_updateDownloading) {
-            ImVec2 popupPos(ws.x - 270, ws.y - 100);
-            ImVec2 popupSize(260, 90);
+            // Dim the entire background - forced update
+            dl->AddRectFilled(ImVec2(0, 0), ws, IM_COL32(0, 0, 0, 180));
+            
+            // Center popup
+            ImVec2 popupSize(320, 140);
+            ImVec2 popupPos((ws.x - popupSize.x) / 2, (ws.y - popupSize.y) / 2);
             
             // Background
             dl->AddRectFilled(popupPos, ImVec2(popupPos.x + popupSize.x, popupPos.y + popupSize.y), 
-                IM_COL32(20, 100, 50, 240), 10.0f);
+                IM_COL32(25, 25, 40, 255), 14.0f);
             dl->AddRect(popupPos, ImVec2(popupPos.x + popupSize.x, popupPos.y + popupSize.y), 
-                IM_COL32(40, 200, 100, 255), 10.0f, 0, 2.0f);
+                IM_COL32(100, 80, 200, 255), 14.0f, 0, 2.0f);
             
-            // Text
-            ImGui::SetCursorPos(ImVec2(popupPos.x + 15, popupPos.y + 10));
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "Update Available!");
-            ImGui::SetCursorPos(ImVec2(popupPos.x + 15, popupPos.y + 28));
-            ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.8f, 1.0f), "v%s -> v%s", LAUNCHER_VERSION, g_newVersion.c_str());
+            // Title
+            const char* title = "Update Required";
+            ImVec2 titleSize = ImGui::CalcTextSize(title);
+            dl->AddText(ImVec2(popupPos.x + (popupSize.x - titleSize.x) / 2, popupPos.y + 20), 
+                IM_COL32(255, 255, 255, 255), title);
             
-            // Update button
-            ImGui::SetCursorPos(ImVec2(popupPos.x + 15, popupPos.y + 52));
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.6f, 0.3f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.75f, 0.4f, 1.0f));
-            if (ImGui::Button("Update Now", ImVec2(140, 28))) {
+            // Version info
+            char verInfo[64];
+            sprintf_s(verInfo, "v%s  ->  v%s", LAUNCHER_VERSION, g_newVersion.c_str());
+            ImVec2 verSize = ImGui::CalcTextSize(verInfo);
+            dl->AddText(ImVec2(popupPos.x + (popupSize.x - verSize.x) / 2, popupPos.y + 50), 
+                IM_COL32(150, 200, 150, 255), verInfo);
+            
+            // Message
+            const char* msg = "A new version is available. Please update.";
+            ImVec2 msgSize = ImGui::CalcTextSize(msg);
+            dl->AddText(ImVec2(popupPos.x + (popupSize.x - msgSize.x) / 2, popupPos.y + 75), 
+                IM_COL32(180, 180, 200, 255), msg);
+            
+            // Update button (centered, no close button - forced update!)
+            ImGui::SetCursorPos(ImVec2(popupPos.x + (popupSize.x - 200) / 2, popupPos.y + 100));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.30f, 0.85f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.55f, 0.40f, 0.95f, 1.0f));
+            if (ImGui::Button("UPDATE NOW", ImVec2(200, 32))) {
                 std::thread([]() {
                     if (DownloadUpdate()) {
                         ApplyUpdate();
                     } else {
-                        g_errorMsg = "Update download failed";
+                        g_errorMsg = "Update download failed. Restart the launcher.";
                         g_updateAvailable = false;
                     }
                 }).detach();
             }
             ImGui::PopStyleColor(2);
-            
-            ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-            if (ImGui::Button("X##close_update", ImVec2(28, 28))) {
-                g_updateAvailable = false;
-            }
-            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
         }
         
         // ===== UPDATE PROGRESS =====
