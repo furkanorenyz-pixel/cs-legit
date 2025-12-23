@@ -97,6 +97,11 @@ std::atomic<float> g_downloadProgress{0.0f};
 std::atomic<bool> g_isDownloading{false};
 std::atomic<bool> g_cheatRunning{false};
 
+// Game status from server
+std::string g_gameStatus = "operational";
+std::string g_gameStatusMsg = "Working";
+std::chrono::steady_clock::time_point g_lastRefresh;
+
 float g_animTimer = 0.0f;
 float g_splashTimer = 0.0f;
 float g_fadeAlpha = 0.0f;
@@ -299,6 +304,80 @@ void FetchUserLicenses() {
     }
 }
 
+// Fetch game status from server
+void FetchGameStatus() {
+    std::thread([]() {
+        try {
+            std::string response = SendRequest("GET", "/api/games/status", "");
+            if (response.empty()) return;
+            
+            // Simple JSON parsing for status
+            size_t cs2Pos = response.find("\"cs2\":");
+            if (cs2Pos != std::string::npos) {
+                size_t statusPos = response.find("\"status\":\"", cs2Pos);
+                if (statusPos != std::string::npos) {
+                    statusPos += 10;
+                    size_t endPos = response.find("\"", statusPos);
+                    if (endPos != std::string::npos) {
+                        g_gameStatus = response.substr(statusPos, endPos - statusPos);
+                    }
+                }
+                
+                size_t msgPos = response.find("\"message\":\"", cs2Pos);
+                if (msgPos != std::string::npos) {
+                    msgPos += 11;
+                    size_t endPos = response.find("\"", msgPos);
+                    if (endPos != std::string::npos) {
+                        g_gameStatusMsg = response.substr(msgPos, endPos - msgPos);
+                    }
+                }
+            }
+            
+            g_lastRefresh = std::chrono::steady_clock::now();
+        } catch (...) {}
+    }).detach();
+}
+
+// Refresh all data (license, status)
+void RefreshData() {
+    if (g_token.empty()) return;
+    
+    g_isLoading = true;
+    
+    std::thread([&]() {
+        try {
+            // Fetch license info
+            std::string response = SendRequest("GET", "/api/user/licenses", "");
+            
+            // Update game licenses from response
+            if (!response.empty()) {
+                for (auto& game : g_games) {
+                    size_t pos = response.find("\"game_id\":\"" + game.id + "\"");
+                    if (pos != std::string::npos) {
+                        size_t daysPos = response.find("\"days_remaining\":", pos);
+                        if (daysPos != std::string::npos) {
+                            daysPos += 17;
+                            int days = std::atoi(response.c_str() + daysPos);
+                            game.hasLicense = true;
+                            game.daysRemaining = days;
+                        }
+                    } else {
+                        game.hasLicense = false;
+                        game.daysRemaining = 0;
+                    }
+                }
+            }
+            
+            // Fetch game status
+            FetchGameStatus();
+            
+        } catch (...) {}
+        
+        g_isLoading = false;
+        g_successMsg = "Data refreshed!";
+    }).detach();
+}
+
 void DoLogin() {
     if (strlen(g_username) == 0 || strlen(g_password) == 0) {
         g_errorMsg = "Enter username and password";
@@ -329,6 +408,7 @@ void DoLogin() {
             SaveSession(g_token, g_displayName);
             SaveCredentials();
             FetchUserLicenses();
+            FetchGameStatus();
             g_currentScreen = Screen::Main;
             g_fadeAlpha = 0.0f;
             g_successMsg = "Welcome!";
@@ -498,6 +578,18 @@ std::string GetGameStatus(const std::string& gameId) {
 
 void LaunchGame(int gameIndex) {
     GameInfo& game = g_games[gameIndex];
+    
+    // Check game status
+    if (g_gameStatus != "operational") {
+        if (g_gameStatus == "updating") {
+            g_errorMsg = "Cheat is updating. Please wait.";
+        } else if (g_gameStatus == "offline") {
+            g_errorMsg = "Cheat is currently offline.";
+        } else {
+            g_errorMsg = "Cheat unavailable: " + g_gameStatusMsg;
+        }
+        return;
+    }
     
     if (!game.hasLicense) {
         g_errorMsg = "No license for " + game.name;
@@ -687,6 +779,7 @@ void RenderSplash() {
         LoadCredentials();
         if (LoadSession()) {
             FetchUserLicenses();
+            FetchGameStatus();
             g_currentScreen = Screen::Main;
         } else {
             g_currentScreen = Screen::Login;
@@ -1033,11 +1126,41 @@ void RenderMain() {
         ImGui::PopStyleVar();
         ImGui::PopStyleColor(2);
         
+        // Refresh button
+        ImGui::SetCursorPos(ImVec2(ws.x - 105, 10));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.2f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.3f, 0.2f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+        if (ImGui::Button("@##refresh", ImVec2(25, 25))) {
+            RefreshData();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Refresh data");
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(2);
+        
         // Game title
         ImGui::SetCursorPos(ImVec2(contentX, 20));
         ImGui::TextColored(theme::text, "%s", game.name.c_str());
+        
+        // Game status indicator
+        ImGui::SameLine();
+        ImGui::SetCursorPosY(22);
+        if (g_gameStatus == "operational") {
+            ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), " [WORKING]");
+        } else if (g_gameStatus == "updating") {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), " [UPDATING]");
+        } else if (g_gameStatus == "offline") {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), " [OFFLINE]");
+        } else {
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), " [%s]", g_gameStatus.c_str());
+        }
+        
         ImGui::SetCursorPos(ImVec2(contentX, 40));
         ImGui::TextColored(theme::textDim, "v%s", game.version.c_str());
+        ImGui::SameLine();
+        ImGui::TextColored(theme::textDim, " - %s", g_gameStatusMsg.c_str());
         
         // License card
         ImVec2 licCardPos(contentX, 70);
