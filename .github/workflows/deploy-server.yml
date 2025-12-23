@@ -10,50 +10,54 @@ on:
 
 jobs:
   deploy:
-    name: 🔄 Hot Reload Server
+    name: 🔄 Deploy Server Updates
     runs-on: ubuntu-latest
     
     steps:
-      - name: 📡 Trigger Server Reload
-        env:
-          SERVER_URL: ${{ secrets.SERVER_URL }}
-          CI_API_KEY: ${{ secrets.CI_API_KEY }}
-        run: |
-          echo "Triggering server reload..."
-          
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$SERVER_URL/api/admin/reload" \
-            -H "X-CI-API-Key: $CI_API_KEY")
-          
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n-1)
-          
-          echo "HTTP Code: $HTTP_CODE"
-          echo "Response: $BODY"
-          
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ Server reload triggered successfully"
-          else
-            echo "❌ Server reload failed"
-            exit 1
-          fi
-      
-      - name: ⏳ Wait for Server Restart
-        run: |
-          echo "Waiting 10 seconds for server to restart..."
-          sleep 10
+      - name: 📡 Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "=== Starting deployment ==="
+            cd ~/cs-legit
+            
+            echo "=== Git pull ==="
+            git pull origin main
+            
+            echo "=== Installing dependencies ==="
+            cd launcher-server/backend
+            npm install --production
+            
+            echo "=== Restarting service ==="
+            systemctl restart launcher
+            
+            echo "=== Waiting for service to start ==="
+            sleep 5
+            
+            echo "=== Checking service status ==="
+            systemctl status launcher --no-pager || true
+            
+            echo "=== Deployment complete ==="
       
       - name: 🔍 Verify Server Health
         env:
           SERVER_URL: ${{ secrets.SERVER_URL }}
         run: |
-          echo "Checking server health..."
+          echo "Waiting 5 more seconds for full startup..."
+          sleep 5
           
-          RESPONSE=$(curl -s "$SERVER_URL/health")
+          echo "Checking server health..."
+          RESPONSE=$(curl -s "$SERVER_URL/health" || echo "failed")
           echo "Health check response: $RESPONSE"
           
           if echo "$RESPONSE" | grep -q '"status":"ok"'; then
-            echo "✅ Server is healthy"
+            echo "✅ Server is healthy and ready"
           else
-            echo "⚠️ Server health check failed (but may still be starting)"
+            echo "⚠️ Server may need more time to start"
+            echo "Check logs: journalctl -u launcher -n 50"
           fi
 
