@@ -205,33 +205,111 @@ router.get('/users', (req, res) => {
 /**
  * POST /api/admin/licenses
  * Generate new license key
+ * 
+ * Body:
+ * - game_id: string (required) - cs2, dayz, rust, all
+ * - days: number (optional) - subscription days (null = lifetime)
+ * - count: number (optional) - how many keys to generate (default 1)
+ * - prefix: string (optional) - custom prefix for keys
  */
 router.post('/licenses', (req, res) => {
-    const { game_id, user_id, days } = req.body;
+    const { game_id, days, count = 1, prefix } = req.body;
     
     if (!game_id) {
         return res.status(400).json({ error: 'game_id required' });
     }
     
-    // Generate unique license key
-    const licenseKey = `${game_id.toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    if (count > 100) {
+        return res.status(400).json({ error: 'Max 100 keys at once' });
+    }
     
     // Calculate expiry
     let expiresAt = null;
-    if (days) {
+    if (days && days > 0) {
         expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
     }
     
-    db.prepare(`
+    const keys = [];
+    const insertStmt = db.prepare(`
         INSERT INTO licenses (user_id, game_id, license_key, expires_at)
-        VALUES (?, ?, ?, ?)
-    `).run(user_id || null, game_id, licenseKey, expiresAt);
+        VALUES (NULL, ?, ?, ?)
+    `);
+    
+    for (let i = 0; i < count; i++) {
+        // Generate unique license key
+        const keyPrefix = prefix || game_id.toUpperCase();
+        const keyBody = crypto.randomBytes(6).toString('hex').toUpperCase();
+        const licenseKey = `${keyPrefix}-${keyBody.slice(0, 4)}-${keyBody.slice(4, 8)}-${keyBody.slice(8, 12)}`;
+        
+        insertStmt.run(game_id, licenseKey, expiresAt);
+        keys.push(licenseKey);
+    }
+    
+    // Format subscription type
+    let subscriptionType = 'Lifetime';
+    if (days === 1) subscriptionType = '1 Day';
+    else if (days === 7) subscriptionType = '1 Week';
+    else if (days === 30) subscriptionType = '1 Month';
+    else if (days === 90) subscriptionType = '3 Months';
+    else if (days === 365) subscriptionType = '1 Year';
+    else if (days) subscriptionType = `${days} Days`;
     
     res.status(201).json({
-        license_key: licenseKey,
+        success: true,
+        count: keys.length,
         game_id,
-        expires_at: expiresAt
+        subscription: subscriptionType,
+        expires_at: expiresAt,
+        keys: keys
     });
+});
+
+/**
+ * GET /api/admin/licenses
+ * List all licenses with filters
+ */
+router.get('/licenses', (req, res) => {
+    const { game_id, unused, expired } = req.query;
+    
+    let query = 'SELECT l.*, u.username FROM licenses l LEFT JOIN users u ON l.user_id = u.id WHERE 1=1';
+    const params = [];
+    
+    if (game_id) {
+        query += ' AND l.game_id = ?';
+        params.push(game_id);
+    }
+    
+    if (unused === 'true') {
+        query += ' AND l.user_id IS NULL';
+    }
+    
+    if (expired === 'true') {
+        query += " AND l.expires_at IS NOT NULL AND l.expires_at < datetime('now')";
+    } else if (expired === 'false') {
+        query += " AND (l.expires_at IS NULL OR l.expires_at > datetime('now'))";
+    }
+    
+    query += ' ORDER BY l.created_at DESC LIMIT 100';
+    
+    const licenses = db.prepare(query).all(...params);
+    
+    res.json({ licenses });
+});
+
+/**
+ * DELETE /api/admin/licenses/:key
+ * Delete/revoke a license key
+ */
+router.delete('/licenses/:key', (req, res) => {
+    const { key } = req.params;
+    
+    const result = db.prepare('DELETE FROM licenses WHERE license_key = ?').run(key);
+    
+    if (result.changes === 0) {
+        return res.status(404).json({ error: 'License not found' });
+    }
+    
+    res.json({ success: true, message: 'License revoked' });
 });
 
 /**

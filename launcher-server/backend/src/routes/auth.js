@@ -65,13 +65,17 @@ router.post('/login', (req, res) => {
 
 /**
  * POST /api/auth/register
- * Register new user (can be disabled in production)
+ * Register new user with license key (required)
  */
 router.post('/register', (req, res) => {
     const { username, password, license_key } = req.body;
     
     if (!username || !password) {
         return res.status(400).json({ error: 'Username and password required' });
+    }
+    
+    if (!license_key) {
+        return res.status(400).json({ error: 'License key required for registration' });
     }
     
     if (username.length < 3 || username.length > 32) {
@@ -88,14 +92,11 @@ router.post('/register', (req, res) => {
         return res.status(409).json({ error: 'Username already taken' });
     }
     
-    // If license key provided, verify it
-    let licenseInfo = null;
-    if (license_key) {
-        licenseInfo = db.prepare('SELECT * FROM licenses WHERE license_key = ? AND user_id IS NULL')
-                        .get(license_key);
-        if (!licenseInfo) {
-            return res.status(400).json({ error: 'Invalid or already used license key' });
-        }
+    // Verify license key
+    const licenseInfo = db.prepare('SELECT * FROM licenses WHERE license_key = ? AND user_id IS NULL')
+                          .get(license_key);
+    if (!licenseInfo) {
+        return res.status(400).json({ error: 'Invalid or already used license key' });
     }
     
     // Create user
@@ -103,15 +104,91 @@ router.post('/register', (req, res) => {
     const result = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)')
                      .run(username, hash);
     
-    // Assign license if provided
-    if (licenseInfo) {
-        db.prepare('UPDATE licenses SET user_id = ? WHERE id = ?')
-          .run(result.lastInsertRowid, licenseInfo.id);
-    }
+    // Assign license to user
+    db.prepare('UPDATE licenses SET user_id = ? WHERE id = ?')
+      .run(result.lastInsertRowid, licenseInfo.id);
     
     res.status(201).json({
-        message: 'User created successfully',
-        user_id: result.lastInsertRowid
+        success: true,
+        message: 'Registration successful!',
+        user_id: result.lastInsertRowid,
+        game: licenseInfo.game_id,
+        expires_at: licenseInfo.expires_at
+    });
+});
+
+/**
+ * POST /api/auth/activate
+ * Activate additional license key for existing user
+ */
+router.post('/activate', (req, res) => {
+    const { license_key } = req.body;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Login required' });
+    }
+    
+    if (!license_key) {
+        return res.status(400).json({ error: 'License key required' });
+    }
+    
+    // Verify token
+    const token = authHeader.substring(7);
+    let userId;
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        userId = decoded.userId;
+    } catch (err) {
+        return res.status(401).json({ error: 'Invalid token' });
+    }
+    
+    // Check license key
+    const licenseInfo = db.prepare('SELECT * FROM licenses WHERE license_key = ? AND user_id IS NULL')
+                          .get(license_key);
+    if (!licenseInfo) {
+        return res.status(400).json({ error: 'Invalid or already used license key' });
+    }
+    
+    // Check if user already has active license for this game
+    const existingLicense = db.prepare(`
+        SELECT * FROM licenses 
+        WHERE user_id = ? AND game_id = ? 
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+    `).get(userId, licenseInfo.game_id);
+    
+    if (existingLicense) {
+        // Extend existing license
+        if (licenseInfo.expires_at && existingLicense.expires_at) {
+            // Add days to existing expiration
+            db.prepare(`
+                UPDATE licenses 
+                SET expires_at = datetime(expires_at, '+' || ? || ' days')
+                WHERE id = ?
+            `).run(
+                Math.floor((new Date(licenseInfo.expires_at) - new Date()) / (1000 * 60 * 60 * 24)),
+                existingLicense.id
+            );
+        }
+        // Delete the new unused key
+        db.prepare('DELETE FROM licenses WHERE id = ?').run(licenseInfo.id);
+        
+        return res.json({
+            success: true,
+            message: 'License extended!',
+            game: licenseInfo.game_id
+        });
+    }
+    
+    // Assign new license to user
+    db.prepare('UPDATE licenses SET user_id = ? WHERE id = ?')
+      .run(userId, licenseInfo.id);
+    
+    res.json({
+        success: true,
+        message: 'License activated!',
+        game: licenseInfo.game_id,
+        expires_at: licenseInfo.expires_at
     });
 });
 

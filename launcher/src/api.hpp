@@ -83,6 +83,8 @@ public:
     
     // Auth
     LoginResult Login(const std::string& username, const std::string& password);
+    LoginResult Register(const std::string& username, const std::string& password, const std::string& licenseKey);
+    bool ActivateLicense(const std::string& licenseKey);
     bool VerifyToken();
     void Logout();
     

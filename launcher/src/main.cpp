@@ -45,8 +45,10 @@ enum class AppScreen {
 AppScreen g_currentScreen = AppScreen::Login;
 char g_username[64] = "";
 char g_password[64] = "";
+char g_licenseKey[64] = "";
 std::string g_loginError = "";
 bool g_isLoggingIn = false;
+bool g_isRegisterMode = false;  // Toggle between login and register
 float g_downloadProgress = 0.0f;
 bool g_isDownloading = false;
 
@@ -235,7 +237,7 @@ void Launch() {
 }
 
 // ============================================
-// Login Functions
+// Login/Register Functions
 // ============================================
 void DoLogin() {
     if (g_isLoggingIn) return;
@@ -254,7 +256,34 @@ void DoLogin() {
         
         if (result.success) {
             g_currentScreen = AppScreen::Main;
-            // Load games
+            api::Client::Get().GetGames();
+        } else {
+            g_loginError = result.error;
+        }
+    }).detach();
+}
+
+void DoRegister() {
+    if (g_isLoggingIn) return;
+    if (strlen(g_username) == 0 || strlen(g_password) == 0) {
+        g_loginError = "Enter username and password";
+        return;
+    }
+    if (strlen(g_licenseKey) == 0) {
+        g_loginError = "Enter license key";
+        return;
+    }
+    
+    g_isLoggingIn = true;
+    g_loginError = "";
+    
+    std::thread([]() {
+        auto result = api::Client::Get().Register(g_username, g_password, g_licenseKey);
+        
+        g_isLoggingIn = false;
+        
+        if (result.success) {
+            g_currentScreen = AppScreen::Main;
             api::Client::Get().GetGames();
         } else {
             g_loginError = result.error;
@@ -555,10 +584,10 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 // Draw Login Screen
 void DrawLoginScreen(ImDrawList* draw, ImVec2 winPos, ImVec2 winSize) {
     // Title
-    const char* titleText = XString("LOGIN");
-    ImGui::SetWindowFontScale(2.0f);
+    const char* titleText = g_isRegisterMode ? XString("REGISTER") : XString("LOGIN");
+    ImGui::SetWindowFontScale(1.8f);
     ImVec2 titleSize = ImGui::CalcTextSize(titleText);
-    ImVec2 titlePos = ImVec2(winPos.x + (winSize.x - titleSize.x) / 2, winPos.y + 60);
+    ImVec2 titlePos = ImVec2(winPos.x + (winSize.x - titleSize.x) / 2, winPos.y + 50);
     
     ImGui::SetCursorScreenPos(titlePos);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.75f, 1.0f, 1.0f));
@@ -566,25 +595,36 @@ void DrawLoginScreen(ImDrawList* draw, ImVec2 winPos, ImVec2 winSize) {
     ImGui::PopStyleColor();
     ImGui::SetWindowFontScale(1.0f);
     
-    // Username input
-    float inputWidth = 280;
+    // Input styling
+    float inputWidth = 260;
     float inputX = winPos.x + (winSize.x - inputWidth) / 2;
-    float inputY = winPos.y + 130;
+    float inputY = winPos.y + 95;
+    float inputSpacing = 45;
     
-    ImGui::SetCursorScreenPos(ImVec2(inputX, inputY));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(15, 12));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12, 10));
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.15f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.15f, 0.15f, 0.2f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.25f, 0.45f, 1.0f));
     ImGui::PushItemWidth(inputWidth);
     
+    // Username
+    ImGui::SetCursorScreenPos(ImVec2(inputX, inputY));
     ImGui::InputTextWithHint("##username", "Username", g_username, sizeof(g_username));
     
-    // Password input
-    ImGui::SetCursorScreenPos(ImVec2(inputX, inputY + 55));
+    // Password
+    ImGui::SetCursorScreenPos(ImVec2(inputX, inputY + inputSpacing));
     ImGui::InputTextWithHint("##password", "Password", g_password, sizeof(g_password), 
         ImGuiInputTextFlags_Password);
+    
+    // License key (only in register mode)
+    float buttonY = inputY + inputSpacing * 2 + 15;
+    if (g_isRegisterMode) {
+        ImGui::SetCursorScreenPos(ImVec2(inputX, inputY + inputSpacing * 2));
+        ImGui::InputTextWithHint("##licensekey", "License Key (XXXX-XXXX-XXXX-XXXX)", 
+            g_licenseKey, sizeof(g_licenseKey));
+        buttonY = inputY + inputSpacing * 3 + 15;
+    }
     
     ImGui::PopItemWidth();
     ImGui::PopStyleColor(3);
@@ -593,29 +633,56 @@ void DrawLoginScreen(ImDrawList* draw, ImVec2 winPos, ImVec2 winSize) {
     // Error message
     if (!g_loginError.empty()) {
         ImVec2 errorSize = ImGui::CalcTextSize(g_loginError.c_str());
-        ImGui::SetCursorScreenPos(ImVec2(winPos.x + (winSize.x - errorSize.x) / 2, inputY + 115));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+        float errorY = g_isRegisterMode ? inputY + inputSpacing * 3 - 5 : inputY + inputSpacing * 2 - 5;
+        ImGui::SetCursorScreenPos(ImVec2(winPos.x + (winSize.x - errorSize.x) / 2, errorY));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
         ImGui::Text("%s", g_loginError.c_str());
         ImGui::PopStyleColor();
     }
     
-    // Login button
-    float buttonY = inputY + 145;
-    if (ui::DrawPremiumButton(draw, 
-        g_isLoggingIn ? XString("LOGGING IN...") : XString("LOGIN"),
-        ImVec2(inputX, buttonY), ImVec2(inputWidth, 48), g_isLoggingIn)) {
-        DoLogin();
+    // Main button (Login or Register)
+    const char* btnText = g_isLoggingIn ? XString("PLEASE WAIT...") : 
+                          (g_isRegisterMode ? XString("CREATE ACCOUNT") : XString("LOGIN"));
+    
+    if (ui::DrawPremiumButton(draw, btnText,
+        ImVec2(inputX, buttonY), ImVec2(inputWidth, 42), g_isLoggingIn)) {
+        if (g_isRegisterMode) {
+            DoRegister();
+        } else {
+            DoLogin();
+        }
     }
     
-    // Enter key to login
+    // Toggle Login/Register link
+    const char* toggleText = g_isRegisterMode ? XString("Already have account? Login") : 
+                                                 XString("New user? Register with key");
+    ImVec2 toggleSize = ImGui::CalcTextSize(toggleText);
+    ImVec2 togglePos = ImVec2(winPos.x + (winSize.x - toggleSize.x) / 2, buttonY + 52);
+    
+    bool toggleHovered = ImGui::IsMouseHoveringRect(togglePos, 
+        ImVec2(togglePos.x + toggleSize.x, togglePos.y + toggleSize.y + 4));
+    
+    ImGui::SetCursorScreenPos(togglePos);
+    ImGui::PushStyleColor(ImGuiCol_Text, toggleHovered ? 
+        ImVec4(0.9f, 0.8f, 1.0f, 1.0f) : ImVec4(0.5f, 0.5f, 0.6f, 1.0f));
+    ImGui::Text("%s", toggleText);
+    ImGui::PopStyleColor();
+    
+    if (toggleHovered && ImGui::IsMouseClicked(0)) {
+        g_isRegisterMode = !g_isRegisterMode;
+        g_loginError = "";
+    }
+    
+    // Enter key
     if (ImGui::IsKeyPressed(ImGuiKey_Enter) && !g_isLoggingIn) {
-        DoLogin();
+        if (g_isRegisterMode) DoRegister();
+        else DoLogin();
     }
     
-    // Server status
-    ImGui::SetCursorScreenPos(ImVec2(winPos.x + 20, winPos.y + winSize.y - 30));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.4f, 0.5f, 1.0f));
-    ImGui::Text("Server: %s", "138.124.0.8");
+    // Server info (bottom)
+    ImGui::SetCursorScreenPos(ImVec2(winPos.x + 15, winPos.y + winSize.y - 22));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.35f, 0.45f, 1.0f));
+    ImGui::Text("Server: 138.124.0.8");
     ImGui::PopStyleColor();
 }
 

@@ -402,6 +402,39 @@ LoginResult Client::Login(const std::string& username, const std::string& passwo
     return result;
 }
 
+LoginResult Client::Register(const std::string& username, const std::string& password,
+                             const std::string& licenseKey) {
+    std::string body = "{\"username\":\"" + username + "\",\"password\":\"" + password + 
+                       "\",\"license_key\":\"" + licenseKey + "\"}";
+    
+    std::string response = HttpPost(L"/api/auth/register", body);
+    
+    LoginResult result;
+    result.success = false;
+    
+    if (response.empty()) {
+        result.error = "Connection failed";
+        return result;
+    }
+    
+    if (ExtractBool(response, "success")) {
+        result.success = true;
+        // Auto-login after registration
+        return Login(username, password);
+    } else {
+        result.error = ExtractString(response, "error");
+        if (result.error.empty()) result.error = "Registration failed";
+    }
+    
+    return result;
+}
+
+bool Client::ActivateLicense(const std::string& licenseKey) {
+    std::string body = "{\"license_key\":\"" + licenseKey + "\"}";
+    std::string response = HttpPost(L"/api/auth/activate", body);
+    return ExtractBool(response, "success");
+}
+
 bool Client::VerifyToken() {
     std::string body = "{\"token\":\"" + m_token + "\"}";
     std::string response = HttpPost(L"/api/auth/verify", body);
