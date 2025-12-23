@@ -49,7 +49,7 @@ bool g_bypassVM = false; // Set to true for development
 // - In CI (GitHub Actions) comes from CMake: -DLAUNCHER_VERSION=${VERSION}
 // - For local builds we use the default value below.
 #ifndef LAUNCHER_VERSION
-#define LAUNCHER_VERSION "1.0.0-local"
+#define LAUNCHER_VERSION "2.0.50-local"
 #endif
 #define WINDOW_WIDTH 700
 #define WINDOW_HEIGHT 500
@@ -318,6 +318,9 @@ void CheckForUpdates() {
             // Read launcher version from server via /api/games/status (games.launcher.version)
             std::string response = HttpRequest("GET", "/api/games/status");
             if (response.empty()) return;
+            
+            // Skip update check for local development builds
+            if (std::string(LAUNCHER_VERSION).find("local") != std::string::npos) return;
             
             // Find launcher block and version field
             std::string serverVersion;
@@ -898,7 +901,7 @@ void DrawWindowControls(ImDrawList* dl, ImVec2 ws) {
         mousePos.y >= closeBtn.y && mousePos.y <= closeBtn.y + minBtnSize.y) closeHovered = true;
         
     dl->AddRectFilled(closeBtn, ImVec2(closeBtn.x + minBtnSize.x, closeBtn.y + minBtnSize.y), 
-        closeHovered ? IM_COL32(200, 60, 60, 255) : IM_COL32(140, 40, 40, 255), 6.0f);
+        closeHovered ? IM_COL32(200, 60, 60, 255) : IM_COL32(140, 40, 40, 200), 8.0f);
         
     ImVec2 closeTextSize = ImGui::CalcTextSize("X");
     dl->AddText(ImVec2(closeBtn.x + (minBtnSize.x - closeTextSize.x) * 0.5f, closeBtn.y + (minBtnSize.y - closeTextSize.y) * 0.5f), 
