@@ -1303,7 +1303,7 @@ void RenderMain() {
         float contentW = ws.x - sidebarW - 50;
         
         GameInfo& game = g_games[g_selectedGame];
-        float pulse = (sinf(g_animTimer * 2.0f) + 1.0f) * 0.5f; // 0-1 pulse
+        // pulse already defined above
         
         // ===== TOP BAR =====
         // Gradient header background
