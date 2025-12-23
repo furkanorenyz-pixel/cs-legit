@@ -5,8 +5,104 @@
 const express = require('express');
 const db = require('../database/db');
 const { authenticate } = require('../middleware/auth');
+const fs = require('fs');
+const path = require('path');
 
 const router = express.Router();
+
+// Status cache
+let statusCache = {
+    data: null,
+    timestamp: 0
+};
+const CACHE_TTL = 60000; // 1 minute
+
+/**
+ * GET /api/games/status
+ * Public endpoint - returns status for all games
+ */
+router.get('/status', (req, res) => {
+    const now = Date.now();
+    
+    // Return cached data if fresh
+    if (statusCache.data && (now - statusCache.timestamp) < CACHE_TTL) {
+        return res.json(statusCache.data);
+    }
+    
+    // Get games with their latest version info
+    const games = db.prepare(`
+        SELECT g.id, g.name, g.latest_version,
+               v.created_at as last_update,
+               v.changelog
+        FROM games g
+        LEFT JOIN versions v ON v.game_id = g.id
+        WHERE g.is_active = 1
+        ORDER BY v.created_at DESC
+    `).all();
+    
+    // Read offsets to check if they're valid
+    const offsetsPath = path.join(__dirname, '../../storage/offsets');
+    
+    const gameStatuses = {};
+    const processedGames = new Set();
+    
+    for (const game of games) {
+        if (processedGames.has(game.id)) continue;
+        processedGames.add(game.id);
+        
+        let status = 'operational'; // operational, updating, maintenance
+        let message = 'All systems operational';
+        
+        // Check if offsets file exists and is recent
+        const offsetFile = path.join(offsetsPath, `${game.id}.json`);
+        let offsetsAge = null;
+        
+        if (fs.existsSync(offsetFile)) {
+            const stats = fs.statSync(offsetFile);
+            offsetsAge = Math.floor((now - stats.mtimeMs) / (1000 * 60 * 60)); // hours
+            
+            if (offsetsAge > 48) {
+                status = 'warning';
+                message = 'Offsets may need update';
+            }
+        } else {
+            status = 'maintenance';
+            message = 'Offsets not available';
+        }
+        
+        // Check if version exists
+        if (!game.latest_version) {
+            status = 'maintenance';
+            message = 'No version available';
+        }
+        
+        gameStatuses[game.id] = {
+            name: game.name,
+            status,
+            message,
+            version: game.latest_version || '---',
+            last_update: game.last_update,
+            offsets_age_hours: offsetsAge
+        };
+    }
+    
+    // Calculate overall status
+    const allOperational = Object.values(gameStatuses).every(g => g.status === 'operational');
+    const anyMaintenance = Object.values(gameStatuses).some(g => g.status === 'maintenance');
+    
+    const response = {
+        overall: anyMaintenance ? 'maintenance' : (allOperational ? 'operational' : 'warning'),
+        overall_message: anyMaintenance ? 'Some systems under maintenance' : 
+                        (allOperational ? 'All systems operational' : 'Some systems need attention'),
+        games: gameStatuses,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Cache the result
+    statusCache = { data: response, timestamp: now };
+    
+    res.json(response);
+});
 
 /**
  * GET /api/games

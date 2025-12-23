@@ -339,15 +339,62 @@
 
         <p class="version">Version <span>1.0.0</span> • Windows x64</p>
 
-        <div class="status">
-            <div class="status-dot"></div>
-            <span>All systems operational</span>
+        <div class="status" id="status">
+            <div class="status-dot" id="status-dot"></div>
+            <span id="status-text">Checking status...</span>
         </div>
+
+        <div class="game-status" id="game-status"></div>
     </div>
 
     <div class="footer">
-        © 2024 Single-Project. All rights reserved.
+        © 2025 Single-Project. All rights reserved.
     </div>
+
+    <style>
+        .game-status {
+            margin-top: 30px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .game-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(138,43,226,0.2);
+            border-radius: 12px;
+            padding: 15px 25px;
+            min-width: 150px;
+            text-align: center;
+        }
+        .game-card.operational { border-color: rgba(0,255,136,0.4); }
+        .game-card.warning { border-color: rgba(255,200,0,0.4); }
+        .game-card.maintenance { border-color: rgba(255,60,60,0.4); }
+        .game-name {
+            font-family: 'Orbitron', monospace;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        .game-ver {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.4);
+            margin-bottom: 8px;
+        }
+        .game-stat {
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 20px;
+            display: inline-block;
+        }
+        .game-stat.operational { background: rgba(0,255,136,0.2); color: #00ff88; }
+        .game-stat.warning { background: rgba(255,200,0,0.2); color: #ffc800; }
+        .game-stat.maintenance { background: rgba(255,60,60,0.2); color: #ff3c3c; }
+        .last-update {
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.3);
+            margin-top: 8px;
+        }
+    </style>
 
     <script>
         // Create floating particles
@@ -362,6 +409,49 @@
             particle.style.height = particle.style.width;
             particlesContainer.appendChild(particle);
         }
+
+        // Fetch status
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/games/status');
+                const data = await res.json();
+                
+                // Update overall status
+                const dot = document.getElementById('status-dot');
+                const text = document.getElementById('status-text');
+                
+                dot.style.background = data.overall === 'operational' ? '#00ff88' : 
+                                       data.overall === 'warning' ? '#ffc800' : '#ff3c3c';
+                dot.style.boxShadow = `0 0 10px ${dot.style.background}`;
+                text.textContent = data.overall_message;
+                
+                // Update game cards
+                const container = document.getElementById('game-status');
+                container.innerHTML = '';
+                
+                for (const [id, game] of Object.entries(data.games)) {
+                    const card = document.createElement('div');
+                    card.className = `game-card ${game.status}`;
+                    
+                    const lastUpdate = game.last_update ? 
+                        new Date(game.last_update).toLocaleDateString() : 'N/A';
+                    
+                    card.innerHTML = `
+                        <div class="game-name">${game.name}</div>
+                        <div class="game-ver">v${game.version}</div>
+                        <span class="game-stat ${game.status}">${game.status.toUpperCase()}</span>
+                        <div class="last-update">Updated: ${lastUpdate}</div>
+                    `;
+                    container.appendChild(card);
+                }
+            } catch (e) {
+                document.getElementById('status-text').textContent = 'Status unavailable';
+            }
+        }
+        
+        // Fetch on load and every 60 seconds
+        fetchStatus();
+        setInterval(fetchStatus, 60000);
     </script>
 </body>
 </html>
