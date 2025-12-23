@@ -9,19 +9,19 @@ echo "╚═══════════════════════�
 echo ""
 
 # Server details
-SERVER="single-project.duckdns.org"
+SERVER="138.124.0.8"
 PASSWORD="mmE28jaX99"
 
 # Kill existing tunnels
-pkill -f "ssh -L 8080" 2>/dev/null
+pkill -f "ssh -L 8081" 2>/dev/null
 
 echo "🔐 Connecting to server..."
 
 # Start SSH tunnel in background
-sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no -L 8080:127.0.0.1:80 -N root@$SERVER &
+sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no -L 8081:127.0.0.1:80 -N root@$SERVER &
 SSH_PID=$!
 
-sleep 2
+sleep 3
 
 # Check if tunnel is working
 if kill -0 $SSH_PID 2>/dev/null; then
@@ -29,13 +29,15 @@ if kill -0 $SSH_PID 2>/dev/null; then
     echo ""
     echo "🌐 Opening admin panel..."
     sleep 1
-    open "http://localhost:8080/panel/"
+    open "http://localhost:8081/panel/"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Admin Panel: http://localhost:8080/panel/"
+    echo "Admin Panel: http://localhost:8081/panel/"
     echo ""
-    echo "Login: admin"
-    echo "Password: admin123"
+    echo "Доступно:"
+    echo "  • Генерация лицензий"
+    echo "  • Управление статусом игр (operational/updating/offline)"
+    echo "  • Просмотр пользователей"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "Press Ctrl+C to disconnect..."

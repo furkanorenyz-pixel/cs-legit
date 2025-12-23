@@ -2050,12 +2050,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
             }
         }
         
-        // Auto-refresh data every 5 seconds (300 frames at 60fps)
+        // Auto-refresh data every 10 seconds (600 frames at 60fps)
         static int statusRefreshCounter = 0;
-        if (g_currentScreen == Screen::Main && ++statusRefreshCounter > 300) {
+        if (g_currentScreen == Screen::Main && ++statusRefreshCounter > 600) {
             statusRefreshCounter = 0;
             FetchGameStatus();
             FetchUserLicenses();
+        }
+        
+        // Check for launcher updates every 30 seconds (1800 frames at 60fps)
+        static int updateCheckCounter = 0;
+        if (++updateCheckCounter > 1800) {
+            updateCheckCounter = 0;
+            CheckForUpdates();
         }
         
         auto now = std::chrono::high_resolution_clock::now();
