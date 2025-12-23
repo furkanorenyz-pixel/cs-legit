@@ -1,0 +1,59 @@
+name: 🚀 Deploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'launcher-server/**'
+      - '.github/workflows/deploy-server.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: 🔄 Hot Reload Server
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📡 Trigger Server Reload
+        env:
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+          CI_API_KEY: ${{ secrets.CI_API_KEY }}
+        run: |
+          echo "Triggering server reload..."
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$SERVER_URL/api/admin/reload" \
+            -H "X-CI-API-Key: $CI_API_KEY")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Server reload triggered successfully"
+          else
+            echo "❌ Server reload failed"
+            exit 1
+          fi
+      
+      - name: ⏳ Wait for Server Restart
+        run: |
+          echo "Waiting 10 seconds for server to restart..."
+          sleep 10
+      
+      - name: 🔍 Verify Server Health
+        env:
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+        run: |
+          echo "Checking server health..."
+          
+          RESPONSE=$(curl -s "$SERVER_URL/health")
+          echo "Health check response: $RESPONSE"
+          
+          if echo "$RESPONSE" | grep -q '"status":"ok"'; then
+            echo "✅ Server is healthy"
+          else
+            echo "⚠️ Server health check failed (but may still be starting)"
+          fi
+

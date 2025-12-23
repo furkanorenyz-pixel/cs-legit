@@ -715,5 +715,40 @@ router.post('/games/:id/toggle', (req, res) => {
     res.json({ success: true, status: newStatus, message: newMessage });
 });
 
+/**
+ * POST /api/admin/reload
+ * Hot reload server (git pull + restart)
+ * Requires X-CI-API-Key header for security
+ */
+router.post('/reload', (req, res) => {
+    const apiKey = req.headers['x-ci-api-key'];
+    
+    if (!apiKey || apiKey !== process.env.CI_API_KEY) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    console.log('[Admin] Server reload requested');
+    
+    res.json({ success: true, message: 'Reloading server...' });
+    
+    // Give response time to send
+    setTimeout(() => {
+        const { exec } = require('child_process');
+        
+        // Pull latest changes
+        exec('git pull', (error, stdout, stderr) => {
+            if (error) {
+                console.error('[Reload] Git pull failed:', error);
+            } else {
+                console.log('[Reload] Git pull output:', stdout);
+            }
+            
+            // Exit process - systemd will restart it automatically with new code
+            console.log('[Reload] Exiting for restart...');
+            process.exit(0);
+        });
+    }, 500);
+});
+
 module.exports = router;
 
