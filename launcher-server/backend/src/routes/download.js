@@ -14,6 +14,52 @@ const STORAGE_PATH = process.env.STORAGE_PATH || '../storage';
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-32-byte-key-change-me!!';
 
 /**
+ * GET /api/download/launcher
+ * PUBLIC - Download launcher (no auth required)
+ */
+router.get('/launcher', (req, res) => {
+    const launcherDir = path.join(__dirname, '../../storage/games/launcher');
+    
+    if (!fs.existsSync(launcherDir)) {
+        return res.status(404).json({ error: 'Launcher not available' });
+    }
+    
+    // Get latest launcher file
+    const files = fs.readdirSync(launcherDir)
+        .filter(f => f.endsWith('.enc') || f.endsWith('.exe'))
+        .sort((a, b) => {
+            const tsA = parseInt(a.split('_')[1]) || 0;
+            const tsB = parseInt(b.split('_')[1]) || 0;
+            return tsB - tsA;
+        });
+    
+    if (files.length === 0) {
+        return res.status(404).json({ error: 'No launcher available' });
+    }
+    
+    const latestFile = files[0];
+    const filePath = path.join(launcherDir, latestFile);
+    
+    console.log(`[Download] Public launcher download: ${latestFile} from ${req.ip}`);
+    
+    // Decrypt and send
+    if (filePath.endsWith('.enc')) {
+        try {
+            const decrypted = decryptFile(filePath);
+            res.setHeader('Content-Disposition', 'attachment; filename="CS-Legit-Launcher.exe"');
+            res.setHeader('Content-Type', 'application/octet-stream');
+            res.setHeader('Content-Length', decrypted.length);
+            res.send(decrypted);
+        } catch (err) {
+            console.error('Launcher decrypt error:', err);
+            return res.status(500).json({ error: 'Download failed' });
+        }
+    } else {
+        res.download(filePath, 'CS-Legit-Launcher.exe');
+    }
+});
+
+/**
  * Decrypt file for streaming
  */
 function decryptFile(filePath) {
