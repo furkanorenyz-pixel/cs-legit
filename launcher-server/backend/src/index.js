@@ -59,9 +59,65 @@ app.use('/api/download', downloadRoutes);
 app.use('/api/offsets', offsetsRoutes);
 app.use('/api/admin', adminRoutes);
 
-// Health check
+// Health check endpoint
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', version: '1.0.0' });
+    const db = require('./database/db');
+    
+    try {
+        // Test database connectivity
+        db.prepare('SELECT 1').get();
+        
+        // Get basic stats
+        const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+        const gameCount = db.prepare('SELECT COUNT(*) as count FROM games WHERE is_active = 1').get();
+        
+        res.json({ 
+            status: 'ok', 
+            version: '1.0.0',
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString(),
+            database: 'connected',
+            stats: {
+                users: userCount.count,
+                games: gameCount.count
+            }
+        });
+    } catch (error) {
+        console.error('[Health Check] Error:', error.message);
+        res.status(503).json({ 
+            status: 'error', 
+            message: 'Service unavailable',
+            database: 'disconnected'
+        });
+    }
+});
+
+// Detailed metrics endpoint (for monitoring)
+app.get('/api/metrics', (req, res) => {
+    const db = require('./database/db');
+    
+    try {
+        const stats = {
+            users: {
+                total: db.prepare('SELECT COUNT(*) as count FROM users').get().count,
+                admins: db.prepare('SELECT COUNT(*) as count FROM users WHERE is_admin = 1').get().count
+            },
+            licenses: {
+                total: db.prepare('SELECT COUNT(*) as count FROM licenses').get().count,
+                active: db.prepare('SELECT COUNT(*) as count FROM licenses WHERE user_id IS NOT NULL').get().count,
+                unused: db.prepare('SELECT COUNT(*) as count FROM licenses WHERE user_id IS NULL').get().count
+            },
+            games: db.prepare('SELECT COUNT(*) as count FROM games WHERE is_active = 1').get().count,
+            uptime: process.uptime(),
+            memory: process.memoryUsage(),
+            timestamp: new Date().toISOString()
+        };
+        
+        res.json(stats);
+    } catch (error) {
+        console.error('[Metrics] Error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch metrics' });
+    }
 });
 
 // ============================================

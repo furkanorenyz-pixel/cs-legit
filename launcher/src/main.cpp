@@ -45,12 +45,13 @@ bool g_bypassVM = false; // Set to true for development
 // Configuration
 // ============================================
 #define PROJECT_NAME "Single-Project"
-// LAUNCHER_VERSION:
-// - In CI (GitHub Actions) comes from CMake: -DLAUNCHER_VERSION=${VERSION}
-// - For local builds we use the default value below.
+
+// LAUNCHER_VERSION is passed from CMake during CI build
+// If not defined (local build), use fallback
 #ifndef LAUNCHER_VERSION
-#define LAUNCHER_VERSION "2.0.50-local"
+    #define LAUNCHER_VERSION "2.0.50-local"
 #endif
+
 #define WINDOW_WIDTH 700
 #define WINDOW_HEIGHT 500
 // Rebuild trigger v2
@@ -237,14 +238,35 @@ void ClearSession() {
 // HTTP
 // ============================================
 std::string HttpRequest(const std::string& method, const std::string& path, const std::string& data = "") {
-    HINTERNET hInternet = InternetOpenA("SingleProject", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
-    if (!hInternet) return "";
+    HINTERNET hInternet = InternetOpenA("SingleProject/2.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+    if (!hInternet) {
+        DWORD error = GetLastError();
+        g_statusMsg = "Network error: " + std::to_string(error);
+        return "";
+    }
+    
+    // Set timeouts (5 seconds connect, 10 seconds receive)
+    DWORD connectTimeout = 5000;
+    DWORD receiveTimeout = 10000;
+    InternetSetOptionA(hInternet, INTERNET_OPTION_CONNECT_TIMEOUT, &connectTimeout, sizeof(connectTimeout));
+    InternetSetOptionA(hInternet, INTERNET_OPTION_RECEIVE_TIMEOUT, &receiveTimeout, sizeof(receiveTimeout));
     
     HINTERNET hConnect = InternetConnectA(hInternet, SERVER_HOST, SERVER_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
-    if (!hConnect) { InternetCloseHandle(hInternet); return ""; }
+    if (!hConnect) {
+        DWORD error = GetLastError();
+        g_statusMsg = "Connection failed: " + std::to_string(error);
+        InternetCloseHandle(hInternet);
+        return "";
+    }
     
     HINTERNET hRequest = HttpOpenRequestA(hConnect, method.c_str(), path.c_str(), NULL, NULL, NULL, 0, 0);
-    if (!hRequest) { InternetCloseHandle(hConnect); InternetCloseHandle(hInternet); return ""; }
+    if (!hRequest) {
+        DWORD error = GetLastError();
+        g_statusMsg = "Request failed: " + std::to_string(error);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return "";
+    }
     
     std::string headers = "Content-Type: application/json\r\n";
     if (!g_token.empty()) headers += "Authorization: Bearer " + g_token + "\r\n";
@@ -254,11 +276,18 @@ std::string HttpRequest(const std::string& method, const std::string& path, cons
         : HttpSendRequestA(hRequest, headers.c_str(), (DWORD)headers.length(), (LPVOID)data.c_str(), (DWORD)data.length());
     
     if (!result) {
+        DWORD error = GetLastError();
+        g_statusMsg = "Send failed: " + std::to_string(error);
         InternetCloseHandle(hRequest);
         InternetCloseHandle(hConnect);
         InternetCloseHandle(hInternet);
         return "";
     }
+    
+    // Check HTTP status code
+    DWORD statusCode = 0;
+    DWORD statusCodeSize = sizeof(statusCode);
+    HttpQueryInfoA(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &statusCode, &statusCodeSize, NULL);
     
     std::string response;
     char buffer[4096];
@@ -271,6 +300,24 @@ std::string HttpRequest(const std::string& method, const std::string& path, cons
     InternetCloseHandle(hRequest);
     InternetCloseHandle(hConnect);
     InternetCloseHandle(hInternet);
+    
+    // Handle HTTP errors
+    if (statusCode >= 400) {
+        if (statusCode == 401) {
+            g_statusMsg = "Authentication failed";
+        } else if (statusCode == 403) {
+            g_statusMsg = "Access denied";
+        } else if (statusCode == 404) {
+            g_statusMsg = "Endpoint not found";
+        } else if (statusCode == 429) {
+            g_statusMsg = "Too many requests, wait a moment";
+        } else if (statusCode >= 500) {
+            g_statusMsg = "Server error: " + std::to_string(statusCode);
+        } else {
+            g_statusMsg = "HTTP error: " + std::to_string(statusCode);
+        }
+    }
+    
     return response;
 }
 
@@ -536,41 +583,61 @@ void DoLogin() {
         return;
     }
     
+    // Validate input length
+    if (strlen(g_username) < 3) {
+        g_errorMsg = "Username too short (min 3 chars)";
+        return;
+    }
+    
+    if (strlen(g_password) < 4) {
+        g_errorMsg = "Password too short (min 4 chars)";
+        return;
+    }
+    
     g_isLoading = true;
     g_errorMsg = "";
     g_statusMsg = "Connecting...";
     
     std::thread([]() {
-        g_hwid = GetHWID();
-        std::string data = "{\"username\":\"" + std::string(g_username) + 
-                          "\",\"password\":\"" + std::string(g_password) + 
-                          "\",\"hwid\":\"" + g_hwid + "\"}";
-        
-        std::string response = HttpRequest("POST", "/api/auth/login", data);
-        
-        if (response.empty()) {
-            g_errorMsg = "Connection failed";
+        try {
+            g_hwid = GetHWID();
+            std::string data = "{\"username\":\"" + std::string(g_username) + 
+                              "\",\"password\":\"" + std::string(g_password) + 
+                              "\",\"hwid\":\"" + g_hwid + "\"}";
+            
+            std::string response = HttpRequest("POST", "/api/auth/login", data);
+            
+            if (response.empty()) {
+                g_errorMsg = !g_statusMsg.empty() ? g_statusMsg : "Connection failed - check internet";
+                g_isLoading = false;
+                g_statusMsg = "";
+                return;
+            }
+            
+            if (response.find("\"token\"") != std::string::npos) {
+                g_token = ExtractJson(response, "token");
+                g_displayName = g_username;
+                SaveSession(g_token, g_displayName);
+                SaveCredentials();
+                FetchUserLicenses();
+                FetchGameStatus();
+                g_currentScreen = Screen::Main;
+                g_fadeAlpha = 0.0f;
+                g_successMsg = "Welcome!";
+            } else {
+                g_errorMsg = ExtractJson(response, "error");
+                if (g_errorMsg.empty()) {
+                    g_errorMsg = !g_statusMsg.empty() ? g_statusMsg : "Login failed";
+                }
+            }
+            
             g_isLoading = false;
-            return;
+            g_statusMsg = "";
+        } catch (...) {
+            g_errorMsg = "Unexpected error occurred";
+            g_isLoading = false;
+            g_statusMsg = "";
         }
-        
-        if (response.find("\"token\"") != std::string::npos) {
-            g_token = ExtractJson(response, "token");
-            g_displayName = g_username;
-            SaveSession(g_token, g_displayName);
-            SaveCredentials();
-            FetchUserLicenses();
-            FetchGameStatus();
-            g_currentScreen = Screen::Main;
-            g_fadeAlpha = 0.0f;
-            g_successMsg = "Welcome!";
-        } else {
-            g_errorMsg = ExtractJson(response, "error");
-            if (g_errorMsg.empty()) g_errorMsg = "Login failed";
-        }
-        
-        g_isLoading = false;
-        g_statusMsg = "";
     }).detach();
 }
 
@@ -580,33 +647,60 @@ void DoRegister() {
         return;
     }
     
+    // Validate input
+    if (strlen(g_username) < 3 || strlen(g_username) > 32) {
+        g_errorMsg = "Username: 3-32 characters";
+        return;
+    }
+    
+    if (strlen(g_password) < 4 || strlen(g_password) > 64) {
+        g_errorMsg = "Password: 4-64 characters";
+        return;
+    }
+    
+    if (strlen(g_licenseKey) < 10) {
+        g_errorMsg = "Invalid license key format";
+        return;
+    }
+    
     g_isLoading = true;
     g_errorMsg = "";
+    g_statusMsg = "Creating account...";
     
     std::thread([]() {
-        std::string data = "{\"username\":\"" + std::string(g_username) + 
-                          "\",\"password\":\"" + std::string(g_password) + 
-                          "\",\"license_key\":\"" + std::string(g_licenseKey) + "\"}";
-        
-        std::string response = HttpRequest("POST", "/api/auth/register", data);
-        
-        if (response.empty()) {
-            g_errorMsg = "Connection failed";
+        try {
+            std::string data = "{\"username\":\"" + std::string(g_username) + 
+                              "\",\"password\":\"" + std::string(g_password) + 
+                              "\",\"license_key\":\"" + std::string(g_licenseKey) + "\"}";
+            
+            std::string response = HttpRequest("POST", "/api/auth/register", data);
+            
+            if (response.empty()) {
+                g_errorMsg = !g_statusMsg.empty() ? g_statusMsg : "Connection failed - check internet";
+                g_isLoading = false;
+                g_statusMsg = "";
+                return;
+            }
+            
+            if (response.find("\"success\"") != std::string::npos) {
+                g_successMsg = "Account created! Login now.";
+                g_currentScreen = Screen::Login;
+                g_fadeAlpha = 0.0f;
+                memset(g_licenseKey, 0, sizeof(g_licenseKey));
+            } else {
+                g_errorMsg = ExtractJson(response, "error");
+                if (g_errorMsg.empty()) {
+                    g_errorMsg = !g_statusMsg.empty() ? g_statusMsg : "Registration failed";
+                }
+            }
+            
             g_isLoading = false;
-            return;
+            g_statusMsg = "";
+        } catch (...) {
+            g_errorMsg = "Unexpected error occurred";
+            g_isLoading = false;
+            g_statusMsg = "";
         }
-        
-        if (response.find("\"success\"") != std::string::npos) {
-            g_successMsg = "Account created! Login now.";
-            g_currentScreen = Screen::Login;
-            g_fadeAlpha = 0.0f;
-            memset(g_licenseKey, 0, sizeof(g_licenseKey));
-        } else {
-            g_errorMsg = ExtractJson(response, "error");
-            if (g_errorMsg.empty()) g_errorMsg = "Registration failed";
-        }
-        
-        g_isLoading = false;
     }).detach();
 }
 
@@ -616,17 +710,47 @@ void ActivateLicense(const std::string& gameId) {
         return;
     }
     
+    if (strlen(g_activateKey) < 10) {
+        g_errorMsg = "Invalid license key format";
+        return;
+    }
+    
     g_isLoading = true;
     g_errorMsg = "";
+    g_statusMsg = "Activating license...";
     
     std::thread([gameId]() {
-        std::string data = "{\"license_key\":\"" + std::string(g_activateKey) + "\"}";
-        std::string response = HttpRequest("POST", "/api/auth/activate", data);
-        
-        if (response.find("\"success\"") != std::string::npos) {
-            g_successMsg = "License activated!";
-            memset(g_activateKey, 0, sizeof(g_activateKey));
-            FetchUserLicenses();
+        try {
+            std::string data = "{\"license_key\":\"" + std::string(g_activateKey) + "\"}";
+            std::string response = HttpRequest("POST", "/api/auth/activate", data);
+            
+            if (response.empty()) {
+                g_errorMsg = !g_statusMsg.empty() ? g_statusMsg : "Connection failed";
+                g_isLoading = false;
+                g_statusMsg = "";
+                return;
+            }
+            
+            if (response.find("\"success\"") != std::string::npos) {
+                g_successMsg = "License activated!";
+                memset(g_activateKey, 0, sizeof(g_activateKey));
+                FetchUserLicenses();
+            } else {
+                g_errorMsg = ExtractJson(response, "error");
+                if (g_errorMsg.empty()) {
+                    g_errorMsg = !g_statusMsg.empty() ? g_statusMsg : "Activation failed";
+                }
+            }
+            
+            g_isLoading = false;
+            g_statusMsg = "";
+        } catch (...) {
+            g_errorMsg = "Unexpected error occurred";
+            g_isLoading = false;
+            g_statusMsg = "";
+        }
+    }).detach();
+}
         } else {
             g_errorMsg = ExtractJson(response, "error");
             if (g_errorMsg.empty()) g_errorMsg = "Activation failed";
