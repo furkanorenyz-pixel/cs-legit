@@ -440,6 +440,53 @@ bool DownloadFile(const std::string& url, const std::string& savePath) {
     return totalRead > 0;
 }
 
+// Check game status from server
+std::string GetGameStatus(const std::string& gameId) {
+    HINTERNET hSession = WinHttpOpen(L"SingleProject/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, NULL, 0);
+    if (!hSession) return "error";
+    
+    std::wstring wHost(SERVER_HOST, SERVER_HOST + strlen(SERVER_HOST));
+    HINTERNET hConnect = WinHttpConnect(hSession, wHost.c_str(), SERVER_PORT, 0);
+    if (!hConnect) { WinHttpCloseHandle(hSession); return "error"; }
+    
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", L"/api/games/status", NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+    if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return "error"; }
+    
+    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, NULL, 0, 0, 0) ||
+        !WinHttpReceiveResponse(hRequest, NULL)) {
+        WinHttpCloseHandle(hRequest); WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession);
+        return "error";
+    }
+    
+    std::string response;
+    DWORD bytesRead;
+    char buffer[4096];
+    while (WinHttpReadData(hRequest, buffer, sizeof(buffer) - 1, &bytesRead) && bytesRead > 0) {
+        buffer[bytesRead] = '\0';
+        response += buffer;
+    }
+    
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    
+    // Parse status for game
+    std::string searchKey = "\"" + gameId + "\":{";
+    size_t pos = response.find(searchKey);
+    if (pos != std::string::npos) {
+        size_t statusPos = response.find("\"status\":\"", pos);
+        if (statusPos != std::string::npos) {
+            statusPos += 10;
+            size_t endPos = response.find("\"", statusPos);
+            if (endPos != std::string::npos) {
+                return response.substr(statusPos, endPos - statusPos);
+            }
+        }
+    }
+    
+    return "operational";
+}
+
 void LaunchGame(int gameIndex) {
     GameInfo& game = g_games[gameIndex];
     
@@ -450,6 +497,28 @@ void LaunchGame(int gameIndex) {
     
     if (!game.available) {
         g_errorMsg = game.name + " coming soon!";
+        return;
+    }
+    
+    // Check game status before launching
+    g_statusMsg = "Checking status...";
+    std::string status = GetGameStatus(game.id);
+    
+    if (status == "updating") {
+        g_errorMsg = "Cheat is being updated. Please wait...";
+        g_statusMsg = "";
+        return;
+    }
+    
+    if (status == "maintenance" || status == "offline") {
+        g_errorMsg = "Cheat is currently offline for maintenance";
+        g_statusMsg = "";
+        return;
+    }
+    
+    if (status == "error") {
+        g_errorMsg = "Cannot check status. Try again later.";
+        g_statusMsg = "";
         return;
     }
     

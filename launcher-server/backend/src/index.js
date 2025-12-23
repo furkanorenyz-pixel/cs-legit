@@ -76,8 +76,15 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
+// Start Telegram monitoring
+const { startMonitoring } = require('./services/telegramMonitor');
+
 app.listen(PORT, HOST, () => {
     console.log(`🚀 Launcher Server running on http://${HOST}:${PORT}`);
     console.log(`📁 Storage: ${path.resolve(process.env.STORAGE_PATH || '../storage')}`);
+    
+    // Start monitoring @cstwoupdate for CS2 updates
+    startMonitoring();
+    console.log(`📱 Telegram monitor started - watching @cstwoupdate`);
 });
 

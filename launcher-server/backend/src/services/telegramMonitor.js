@@ -1,33 +1,43 @@
 /**
  * Telegram Channel Monitor for CS2 Updates
- * Monitors a Telegram channel and updates game status when CS2 update is detected
+ * Monitors @cstwoupdate channel and updates game status when CS2 update is detected
  */
 
 const https = require('https');
 const db = require('../database/db');
 
-// Configuration - set via environment variables
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID || '';
+// Channel to monitor (public web view)
+const CHANNEL_URL = 'https://t.me/s/cstwoupdate';
+const CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
 
-let lastUpdateId = 0;
-let isMonitoring = false;
+// Store last seen update date
+let lastSeenDate = null;
+let isRunning = false;
 
 /**
- * Keywords that indicate a CS2 update (from @cstwoupdate channel)
+ * Keywords that indicate a CS2 update
  */
 const UPDATE_KEYWORDS = [
     'обновление counter strike 2',
-    'обновления cs2',
     '#cs2update',
     'версия клиента',
-    'размер ~',
-    'counter strike 2 от',
-    'cs2update'
+    'counter strike 2 от'
 ];
 
 /**
- * Check if message contains update keywords
+ * Parse date from message like "Обновление Counter Strike 2 от 08.12.2025"
+ */
+function parseUpdateDate(text) {
+    const match = text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+    if (match) {
+        const [_, day, month, year] = match;
+        return new Date(`${year}-${month}-${day}`);
+    }
+    return null;
+}
+
+/**
+ * Check if text contains update keywords
  */
 function isUpdateMessage(text) {
     if (!text) return false;
@@ -36,32 +46,9 @@ function isUpdateMessage(text) {
 }
 
 /**
- * Set game status in database
+ * Ensure game_status table exists
  */
-function setGameStatus(gameId, status, message = null) {
-    // Create status table if not exists
-    db.prepare(`
-        CREATE TABLE IF NOT EXISTS game_status (
-            game_id TEXT PRIMARY KEY,
-            status TEXT DEFAULT 'operational',
-            message TEXT,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_by TEXT
-        )
-    `).run();
-    
-    db.prepare(`
-        INSERT OR REPLACE INTO game_status (game_id, status, message, updated_at, updated_by)
-        VALUES (?, ?, ?, datetime('now'), ?)
-    `).run(gameId, status, message, 'telegram');
-    
-    console.log(`[TelegramMonitor] Set ${gameId} status to: ${status}`);
-}
-
-/**
- * Get current game status
- */
-function getGameStatus(gameId) {
+function ensureStatusTable() {
     try {
         db.prepare(`
             CREATE TABLE IF NOT EXISTS game_status (
@@ -72,7 +59,30 @@ function getGameStatus(gameId) {
                 updated_by TEXT
             )
         `).run();
-        
+    } catch (e) {}
+}
+
+/**
+ * Set game status in database
+ */
+function setGameStatus(gameId, status, message, updatedBy = 'system') {
+    ensureStatusTable();
+    
+    db.prepare(`
+        INSERT OR REPLACE INTO game_status (game_id, status, message, updated_at, updated_by)
+        VALUES (?, ?, ?, datetime('now'), ?)
+    `).run(gameId, status, message, updatedBy);
+    
+    console.log(`[TelegramMonitor] Set ${gameId} status to: ${status}`);
+}
+
+/**
+ * Get current game status
+ */
+function getGameStatus(gameId) {
+    ensureStatusTable();
+    
+    try {
         const status = db.prepare('SELECT * FROM game_status WHERE game_id = ?').get(gameId);
         return status || { game_id: gameId, status: 'operational', message: null };
     } catch (e) {
@@ -81,76 +91,144 @@ function getGameStatus(gameId) {
 }
 
 /**
- * Poll Telegram for new messages (if bot token is configured)
+ * Fetch and parse channel page
  */
-async function pollTelegram() {
-    if (!BOT_TOKEN || !CHANNEL_ID) {
-        return; // Telegram not configured
-    }
-    
+async function checkChannel() {
     return new Promise((resolve) => {
-        const url = `https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=30`;
-        
-        https.get(url, (res) => {
+        https.get(CHANNEL_URL, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
                 try {
-                    const json = JSON.parse(data);
-                    if (json.ok && json.result) {
-                        for (const update of json.result) {
-                            lastUpdateId = update.update_id;
+                    // Find all messages with update keywords
+                    const messages = data.match(/<div class="tgme_widget_message_text[^>]*>[\s\S]*?<\/div>/g) || [];
+                    
+                    for (const msg of messages) {
+                        // Remove HTML tags
+                        const text = msg.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                        
+                        if (isUpdateMessage(text)) {
+                            const updateDate = parseUpdateDate(text);
                             
-                            const message = update.message || update.channel_post;
-                            if (message && message.text) {
-                                if (isUpdateMessage(message.text)) {
-                                    console.log('[TelegramMonitor] CS2 update detected!');
-                                    setGameStatus('cs2', 'updating', 'Game update detected via Telegram');
+                            if (updateDate) {
+                                // Check if this is a new update
+                                if (!lastSeenDate || updateDate > lastSeenDate) {
+                                    console.log(`[TelegramMonitor] NEW CS2 UPDATE DETECTED: ${updateDate.toISOString()}`);
+                                    
+                                    // Update last seen date
+                                    lastSeenDate = updateDate;
+                                    
+                                    // Save to database
+                                    try {
+                                        db.prepare(`
+                                            CREATE TABLE IF NOT EXISTS update_log (
+                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                game_id TEXT,
+                                                detected_at TEXT,
+                                                update_date TEXT,
+                                                message TEXT
+                                            )
+                                        `).run();
+                                        
+                                        db.prepare(`
+                                            INSERT INTO update_log (game_id, detected_at, update_date, message)
+                                            VALUES ('cs2', datetime('now'), ?, ?)
+                                        `).run(updateDate.toISOString(), text.substring(0, 200));
+                                    } catch (e) {}
+                                    
+                                    // Set status to updating
+                                    const currentStatus = getGameStatus('cs2');
+                                    if (currentStatus.status === 'operational') {
+                                        setGameStatus('cs2', 'updating', 
+                                            `CS2 обновление от ${updateDate.toLocaleDateString('ru-RU')} - чит обновляется`, 
+                                            'telegram_bot'
+                                        );
+                                    }
+                                    
+                                    resolve({ detected: true, date: updateDate });
+                                    return;
                                 }
                             }
                         }
                     }
+                    
+                    resolve({ detected: false });
                 } catch (e) {
                     console.error('[TelegramMonitor] Parse error:', e.message);
+                    resolve({ detected: false, error: e.message });
                 }
-                resolve();
             });
         }).on('error', (e) => {
             console.error('[TelegramMonitor] Request error:', e.message);
-            resolve();
+            resolve({ detected: false, error: e.message });
         });
     });
 }
 
 /**
- * Start monitoring (if configured)
+ * Initialize last seen date from database
+ */
+function initLastSeenDate() {
+    try {
+        db.prepare(`
+            CREATE TABLE IF NOT EXISTS update_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id TEXT,
+                detected_at TEXT,
+                update_date TEXT,
+                message TEXT
+            )
+        `).run();
+        
+        const lastUpdate = db.prepare(`
+            SELECT update_date FROM update_log 
+            WHERE game_id = 'cs2' 
+            ORDER BY detected_at DESC LIMIT 1
+        `).get();
+        
+        if (lastUpdate && lastUpdate.update_date) {
+            lastSeenDate = new Date(lastUpdate.update_date);
+            console.log(`[TelegramMonitor] Last known update: ${lastSeenDate.toISOString()}`);
+        }
+    } catch (e) {
+        console.error('[TelegramMonitor] Init error:', e.message);
+    }
+}
+
+/**
+ * Start monitoring loop
  */
 function startMonitoring() {
-    if (!BOT_TOKEN || !CHANNEL_ID) {
-        console.log('[TelegramMonitor] Not configured - skipping');
-        return;
-    }
+    if (isRunning) return;
+    isRunning = true;
     
-    if (isMonitoring) return;
-    isMonitoring = true;
+    console.log('[TelegramMonitor] Started monitoring @cstwoupdate');
+    initLastSeenDate();
     
-    console.log('[TelegramMonitor] Started monitoring');
+    // Initial check
+    checkChannel();
     
-    async function poll() {
-        if (!isMonitoring) return;
-        await pollTelegram();
-        setTimeout(poll, 5000); // Poll every 5 seconds
-    }
-    
-    poll();
+    // Periodic checks
+    setInterval(() => {
+        if (isRunning) {
+            checkChannel();
+        }
+    }, CHECK_INTERVAL);
 }
 
 /**
  * Stop monitoring
  */
 function stopMonitoring() {
-    isMonitoring = false;
+    isRunning = false;
     console.log('[TelegramMonitor] Stopped');
+}
+
+/**
+ * Manual check (for API)
+ */
+async function manualCheck() {
+    return await checkChannel();
 }
 
 module.exports = {
@@ -158,6 +236,6 @@ module.exports = {
     stopMonitoring,
     setGameStatus,
     getGameStatus,
-    isUpdateMessage
+    manualCheck,
+    checkChannel
 };
-
