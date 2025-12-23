@@ -185,7 +185,7 @@ InjectionResult Injector::InjectByPid(uint32_t pid, const std::string& dllPath,
     file.close();
     
     switch (method) {
-        case InjectionMethod::LoadLibrary:
+        case InjectionMethod::LoadLib:
             return InjectLoadLibrary(pid, dllPath);
         case InjectionMethod::ManualMap:
             return InjectManualMap(pid, dllPath);

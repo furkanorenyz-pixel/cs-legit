@@ -1,21 +1,23 @@
 /**
- * Cheat Launcher - Main Entry Point
- * 
- * This is a console-based launcher. For production, you'd want a GUI
- * using ImGui, Qt, or Windows native controls.
+ * CS-Legit Launcher
+ * External Cheat for CS2
  */
 
 #include <iostream>
 #include <string>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <chrono>
 
 #ifdef _WIN32
 #include <Windows.h>
+#include <TlHelp32.h>
+#include <shellapi.h>
+#pragma comment(lib, "Shell32.lib")
 #endif
 
 #include "../include/api.hpp"
-#include "../include/injector.hpp"
 
 namespace fs = std::filesystem;
 using namespace launcher;
@@ -24,12 +26,13 @@ using namespace launcher;
 // Config
 // ============================================
 
-const std::string SERVER_URL = "http://your-server.com:3000";
-const std::string CHEAT_DIR = "cheats";
-const std::string CONFIG_FILE = "launcher.cfg";
+const std::string SERVER_URL = "http://138.124.0.8";
+const std::string CHEAT_DIR = "files";
+const std::string CONFIG_FILE = "session.dat";
+const std::string VERSION = "2.0.0";
 
 // ============================================
-// Helper Functions
+// Console Helpers
 // ============================================
 
 void ClearScreen() {
@@ -40,85 +43,165 @@ void ClearScreen() {
 #endif
 }
 
-void SetConsoleColor(int color) {
+void SetColor(int color) {
 #ifdef _WIN32
     SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
 #endif
 }
 
+void Print(const std::string& msg, int color = 7) {
+    SetColor(color);
+    std::cout << msg;
+    SetColor(7);
+}
+
+void PrintLine(const std::string& msg, int color = 7) {
+    Print(msg + "\n", color);
+}
+
 void PrintLogo() {
-    SetConsoleColor(11); // Cyan
+    SetColor(13); // Purple
     std::cout << R"(
-   ██████╗██╗  ██╗███████╗ █████╗ ████████╗
-  ██╔════╝██║  ██║██╔════╝██╔══██╗╚══██╔══╝
-  ██║     ███████║█████╗  ███████║   ██║   
-  ██║     ██╔══██║██╔══╝  ██╔══██║   ██║   
-  ╚██████╗██║  ██║███████╗██║  ██║   ██║   
-   ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝   ╚═╝   
+   ██████╗███████╗      ██╗     ███████╗ ██████╗ ██╗████████╗
+  ██╔════╝██╔════╝      ██║     ██╔════╝██╔════╝ ██║╚══██╔══╝
+  ██║     ███████╗█████╗██║     █████╗  ██║  ███╗██║   ██║   
+  ██║     ╚════██║╚════╝██║     ██╔══╝  ██║   ██║██║   ██║   
+  ╚██████╗███████║      ███████╗███████╗╚██████╔╝██║   ██║   
+   ╚═════╝╚══════╝      ╚══════╝╚══════╝ ╚═════╝ ╚═╝   ╚═╝   
     )" << std::endl;
-    SetConsoleColor(7); // Reset
-    std::cout << "  Launcher v1.0.0" << std::endl;
-    std::cout << "  ─────────────────────────────────────────\n" << std::endl;
+    SetColor(8);
+    std::cout << "  Launcher v" << VERSION << " | External ESP for CS2\n";
+    SetColor(7);
+    std::cout << "  ───────────────────────────────────────────────────\n\n";
 }
 
 void PrintError(const std::string& msg) {
-    SetConsoleColor(12); // Red
-    std::cout << "[ERROR] " << msg << std::endl;
-    SetConsoleColor(7);
+    PrintLine("  [!] " + msg, 12);
 }
 
 void PrintSuccess(const std::string& msg) {
-    SetConsoleColor(10); // Green
-    std::cout << "[OK] " << msg << std::endl;
-    SetConsoleColor(7);
+    PrintLine("  [+] " + msg, 10);
 }
 
 void PrintInfo(const std::string& msg) {
-    SetConsoleColor(14); // Yellow
-    std::cout << "[INFO] " << msg << std::endl;
-    SetConsoleColor(7);
+    PrintLine("  [*] " + msg, 14);
 }
 
-// Save token to config file
-void SaveToken(const std::string& token) {
-    std::ofstream file(CONFIG_FILE);
+void WaitEnter() {
+    std::cout << "\n  Press Enter to continue...";
+    std::cin.ignore(10000, '\n');
+    std::cin.get();
+}
+
+// ============================================
+// Session Management
+// ============================================
+
+struct Session {
+    std::string token;
+    std::string username;
+};
+
+void SaveSession(const Session& session) {
+    std::ofstream file(CONFIG_FILE, std::ios::binary);
     if (file.is_open()) {
-        file << token;
+        size_t len = session.token.length();
+        file.write(reinterpret_cast<const char*>(&len), sizeof(len));
+        file.write(session.token.c_str(), len);
+        len = session.username.length();
+        file.write(reinterpret_cast<const char*>(&len), sizeof(len));
+        file.write(session.username.c_str(), len);
         file.close();
     }
 }
 
-// Load token from config file
-std::string LoadToken() {
-    std::ifstream file(CONFIG_FILE);
+Session LoadSession() {
+    Session session;
+    std::ifstream file(CONFIG_FILE, std::ios::binary);
     if (file.is_open()) {
-        std::string token;
-        std::getline(file, token);
+        size_t len;
+        if (file.read(reinterpret_cast<char*>(&len), sizeof(len))) {
+            session.token.resize(len);
+            file.read(&session.token[0], len);
+        }
+        if (file.read(reinterpret_cast<char*>(&len), sizeof(len))) {
+            session.username.resize(len);
+            file.read(&session.username[0], len);
+        }
         file.close();
-        return token;
     }
-    return "";
+    return session;
+}
+
+void ClearSession() {
+    fs::remove(CONFIG_FILE);
 }
 
 // ============================================
-// Menu Functions
+// Process Helpers
 // ============================================
 
-bool DoLogin() {
+#ifdef _WIN32
+bool IsProcessRunning(const std::string& processName) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return false;
+    
+    PROCESSENTRY32 entry;
+    entry.dwSize = sizeof(entry);
+    
+    if (Process32First(snapshot, &entry)) {
+        do {
+            if (_stricmp(entry.szExeFile, processName.c_str()) == 0) {
+                CloseHandle(snapshot);
+                return true;
+            }
+        } while (Process32Next(snapshot, &entry));
+    }
+    
+    CloseHandle(snapshot);
+    return false;
+}
+
+void OpenUrl(const std::string& url) {
+    ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+}
+#endif
+
+// ============================================
+// Login Screen
+// ============================================
+
+bool DoLogin(ApiClient& api, Session& session) {
     std::string username, password;
     
-    std::cout << "Username: ";
+    Print("  Username: ", 7);
     std::cin >> username;
-    std::cout << "Password: ";
+    Print("  Password: ", 7);
+    
+    // Hide password input
+#ifdef _WIN32
+    HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode;
+    GetConsoleMode(hStdin, &mode);
+    SetConsoleMode(hStdin, mode & ~ENABLE_ECHO_INPUT);
+#endif
+    
     std::cin >> password;
     
-    PrintInfo("Logging in...");
+#ifdef _WIN32
+    SetConsoleMode(hStdin, mode);
+#endif
+    std::cout << std::endl;
     
-    auto result = ApiClient::Get().Login(username, password);
+    PrintInfo("Connecting...");
+    
+    auto result = api.Login(username, password);
     
     if (result.success) {
-        PrintSuccess("Welcome, " + result.user.username + "!");
-        SaveToken(result.token);
+        session.token = result.token;
+        session.username = result.user.username;
+        SaveSession(session);
+        PrintSuccess("Welcome back, " + session.username + "!");
         return true;
     } else {
         PrintError(result.error);
@@ -126,145 +209,268 @@ bool DoLogin() {
     }
 }
 
-void ShowGames() {
-    auto games = ApiClient::Get().GetGames();
+// ============================================
+// Register Screen
+// ============================================
+
+bool DoRegister(ApiClient& api, Session& session) {
+    std::string username, password, license;
     
-    if (games.empty()) {
-        PrintInfo("No games available.");
-        return;
-    }
+    std::cout << "\n";
+    PrintLine("  ═══════════════════════════════════════════════", 13);
+    PrintLine("                  REGISTRATION", 13);
+    PrintLine("  ═══════════════════════════════════════════════", 13);
+    std::cout << "\n";
     
-    std::cout << "\n  Available Games:\n";
-    std::cout << "  ─────────────────────────────────────────\n";
+    Print("  License Key: ", 14);
+    std::cin >> license;
     
-    int i = 1;
-    for (const auto& game : games) {
-        SetConsoleColor(game.has_license ? 10 : 8);
-        std::cout << "  [" << i++ << "] " << game.name;
-        if (game.has_license) {
-            std::cout << " (v" << game.latest_version << ")";
-        } else {
-            std::cout << " [NO LICENSE]";
-        }
-        std::cout << std::endl;
-    }
-    SetConsoleColor(7);
+    Print("  Username: ", 7);
+    std::cin >> username;
+    
+    Print("  Password: ", 7);
+    std::cin >> password;
+    
     std::cout << std::endl;
+    PrintInfo("Registering...");
+    
+    auto result = api.Register(username, password, license);
+    
+    if (result.success) {
+        session.token = result.token;
+        session.username = result.user.username;
+        SaveSession(session);
+        PrintSuccess("Registration successful!");
+        PrintSuccess("Welcome, " + session.username + "!");
+        return true;
+    } else {
+        PrintError(result.error);
+        return false;
+    }
 }
 
-void LaunchGame(const std::string& gameId, const std::string& processName) {
-    auto& api = ApiClient::Get();
+// ============================================
+// Main Menu (After Login)
+// ============================================
+
+void ShowInstructions() {
+    ClearScreen();
+    PrintLogo();
     
-    // Get game info
-    auto gameOpt = api.GetGame(gameId);
-    if (!gameOpt.has_value()) {
-        PrintError("Game not found.");
+    PrintLine("  ═══════════════════════════════════════════════", 14);
+    PrintLine("              HOW TO USE EXTERNAL ESP", 14);
+    PrintLine("  ═══════════════════════════════════════════════", 14);
+    std::cout << "\n";
+    
+    PrintLine("  1. Launch CS2 and wait for main menu", 7);
+    PrintLine("  2. Press [LAUNCH] in this launcher", 7);
+    PrintLine("  3. External overlay will appear on top of game", 7);
+    std::cout << "\n";
+    
+    PrintLine("  HOTKEYS:", 10);
+    PrintLine("  ─────────────────────────────────────", 8);
+    PrintLine("  INSERT     - Open/Close menu", 7);
+    PrintLine("  HOME       - Toggle ESP", 7);
+    PrintLine("  END        - Exit cheat", 7);
+    std::cout << "\n";
+    
+    PrintLine("  FEATURES:", 10);
+    PrintLine("  ─────────────────────────────────────", 8);
+    PrintLine("  • Box ESP (2D/3D/Corner)", 7);
+    PrintLine("  • Health bar", 7);
+    PrintLine("  • Player names", 7);
+    PrintLine("  • Distance", 7);
+    PrintLine("  • Skeleton ESP", 7);
+    PrintLine("  • Head dot", 7);
+    PrintLine("  • Snaplines", 7);
+    std::cout << "\n";
+    
+    PrintLine("  NOTES:", 14);
+    PrintLine("  ─────────────────────────────────────", 8);
+    PrintLine("  • Run CS2 in WINDOWED or BORDERLESS mode", 7);
+    PrintLine("  • Overlay is external - undetected", 7);
+    PrintLine("  • Offsets update automatically", 7);
+    
+    WaitEnter();
+}
+
+void LaunchExternal(ApiClient& api) {
+    ClearScreen();
+    PrintLogo();
+    
+    // Check CS2 is running
+#ifdef _WIN32
+    if (!IsProcessRunning("cs2.exe")) {
+        PrintError("CS2 is not running!");
+        PrintInfo("Please start CS2 first, then press Launch.");
+        WaitEnter();
         return;
     }
+#endif
     
-    auto game = gameOpt.value();
+    PrintSuccess("CS2 detected!");
     
-    if (!game.has_license) {
-        PrintError("No license for this game.");
-        return;
-    }
-    
-    // Create cheats directory
+    // Create directory
     fs::create_directories(CHEAT_DIR);
     
-    std::string cheatPath = CHEAT_DIR + "/" + gameId + ".dll";
-    std::string localVersion = "";
-    
-    // Check if we have a local copy
-    if (fs::exists(cheatPath)) {
-        // TODO: Read local version from a manifest file
-        localVersion = "1.0.0"; // Placeholder
-    }
+    std::string exePath = CHEAT_DIR + "/externa.exe";
+    std::string versionPath = CHEAT_DIR + "/version.json";
     
     // Check for updates
-    bool needsDownload = !fs::exists(cheatPath) || api.CheckUpdate(gameId, localVersion);
+    PrintInfo("Checking for updates...");
+    
+    std::string localVersion = "";
+    if (fs::exists(versionPath)) {
+        std::ifstream vf(versionPath);
+        std::string content((std::istreambuf_iterator<char>(vf)),
+                           std::istreambuf_iterator<char>());
+        // Simple parse for version
+        auto pos = content.find("\"version\"");
+        if (pos != std::string::npos) {
+            auto start = content.find("\"", pos + 10) + 1;
+            auto end = content.find("\"", start);
+            localVersion = content.substr(start, end - start);
+        }
+    }
+    
+    bool needsDownload = !fs::exists(exePath);
+    
+    // Check server version
+    auto gameInfo = api.GetGame("cs2");
+    if (gameInfo.has_value()) {
+        if (localVersion != gameInfo->latest_version) {
+            needsDownload = true;
+            PrintInfo("New version available: " + gameInfo->latest_version);
+        }
+    }
     
     if (needsDownload) {
         PrintInfo("Downloading latest version...");
         
-        bool success = api.DownloadLatest(gameId, cheatPath, [](const DownloadProgress& p) {
-            std::cout << "\r  Progress: " << (int)p.percent << "%    " << std::flush;
-        });
+        bool success = api.DownloadFile("cs2", "externa", exePath, 
+            [](size_t current, size_t total) {
+                int percent = (total > 0) ? (int)(current * 100 / total) : 0;
+                std::cout << "\r  Progress: " << percent << "%   " << std::flush;
+            });
         
         std::cout << std::endl;
         
         if (!success) {
-            PrintError("Download failed!");
+            PrintError("Download failed! Check your internet connection.");
+            WaitEnter();
             return;
         }
         
-        PrintSuccess("Download complete.");
-    }
-    
-    // Check offsets update
-    std::string offsetsPath = CHEAT_DIR + "/" + gameId + "_offsets.json";
-    PrintInfo("Updating offsets...");
-    
-    std::string offsets = api.GetOffsets(gameId);
-    if (!offsets.empty()) {
-        std::ofstream offsetsFile(offsetsPath);
-        offsetsFile << offsets;
-        offsetsFile.close();
-        PrintSuccess("Offsets updated.");
-    }
-    
-    // Wait for game and inject
-    PrintInfo("Waiting for " + processName + "...");
-    
-    auto result = Injector::WaitAndInject(processName, cheatPath, InjectionMethod::ManualMap);
-    
-    if (result.success) {
-        PrintSuccess("Injected successfully! Module base: 0x" + 
-                    std::to_string(result.moduleBase));
+        // Save version info
+        if (gameInfo.has_value()) {
+            std::ofstream vf(versionPath);
+            vf << "{\"version\":\"" << gameInfo->latest_version << "\"}";
+        }
+        
+        PrintSuccess("Download complete!");
     } else {
-        PrintError("Injection failed: " + result.error);
+        PrintSuccess("Cheat is up to date (v" + localVersion + ")");
     }
+    
+    // Download offsets
+    PrintInfo("Updating offsets...");
+    std::string offsets = api.GetOffsets("cs2");
+    if (!offsets.empty()) {
+        std::ofstream of(CHEAT_DIR + "/offsets.json");
+        of << offsets;
+        PrintSuccess("Offsets updated!");
+    }
+    
+    // Launch
+    PrintInfo("Launching externa.exe...");
+    
+#ifdef _WIN32
+    STARTUPINFOA si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    
+    if (CreateProcessA(exePath.c_str(), NULL, NULL, NULL, FALSE, 
+                       0, NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        
+        PrintSuccess("Launched successfully!");
+        PrintLine("\n  The overlay should now appear over CS2.", 10);
+        PrintLine("  Press INSERT to open the menu.", 14);
+    } else {
+        PrintError("Failed to launch! Error: " + std::to_string(GetLastError()));
+    }
+#else
+    PrintError("Windows only feature.");
+#endif
+    
+    WaitEnter();
 }
 
-void MainMenu() {
+void MainMenu(ApiClient& api, Session& session) {
     while (true) {
         ClearScreen();
         PrintLogo();
         
-        std::cout << "  [1] Counter-Strike 2\n";
-        std::cout << "  [2] DayZ\n";
-        std::cout << "  [3] Rust\n";
-        std::cout << "  [4] View All Games\n";
-        std::cout << "  [5] Settings\n";
-        std::cout << "  [0] Exit\n\n";
+        // User info
+        Print("  Logged in as: ", 8);
+        PrintLine(session.username, 10);
+        std::cout << "\n";
         
-        std::cout << "  Choice: ";
+        // Menu
+        PrintLine("  ╔═══════════════════════════════════════════╗", 13);
+        PrintLine("  ║                                           ║", 13);
+        Print("  ║   ", 13);
+        Print("[1]", 14);
+        Print("  LAUNCH EXTERNAL              ", 7);
+        PrintLine("║", 13);
+        PrintLine("  ║                                           ║", 13);
+        Print("  ║   ", 13);
+        Print("[2]", 8);
+        Print("  How to Use                       ", 8);
+        PrintLine("║", 13);
+        Print("  ║   ", 13);
+        Print("[3]", 8);
+        Print("  Check for Updates                ", 8);
+        PrintLine("║", 13);
+        Print("  ║   ", 13);
+        Print("[4]", 8);
+        Print("  Logout                           ", 8);
+        PrintLine("║", 13);
+        Print("  ║   ", 13);
+        Print("[0]", 12);
+        Print("  Exit                             ", 8);
+        PrintLine("║", 13);
+        PrintLine("  ║                                           ║", 13);
+        PrintLine("  ╚═══════════════════════════════════════════╝", 13);
+        
+        std::cout << "\n  Choice: ";
         int choice;
         std::cin >> choice;
         
         switch (choice) {
             case 1:
-                LaunchGame("cs2", "cs2.exe");
+                LaunchExternal(api);
                 break;
             case 2:
-                LaunchGame("dayz", "DayZ_x64.exe");
+                ShowInstructions();
                 break;
             case 3:
-                LaunchGame("rust", "RustClient.exe");
+                PrintInfo("Checking for updates...");
+                {
+                    auto game = api.GetGame("cs2");
+                    if (game.has_value()) {
+                        PrintSuccess("Latest version: " + game->latest_version);
+                    }
+                }
+                WaitEnter();
                 break;
             case 4:
-                ShowGames();
-                break;
-            case 5:
-                // Settings menu
-                break;
-            case 0:
+                ClearSession();
+                PrintInfo("Logged out.");
                 return;
+            case 0:
+                exit(0);
         }
-        
-        std::cout << "\nPress Enter to continue...";
-        std::cin.ignore();
-        std::cin.get();
     }
 }
 
@@ -274,55 +480,78 @@ void MainMenu() {
 
 int main() {
 #ifdef _WIN32
-    SetConsoleTitleA("Cheat Launcher");
+    SetConsoleTitleA("CS-Legit Launcher");
+    
+    // Set console size
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    SMALL_RECT rect = {0, 0, 60, 35};
+    SetConsoleWindowInfo(hOut, TRUE, &rect);
 #endif
     
-    ClearScreen();
-    PrintLogo();
+    ApiClient api;
+    api.SetServerUrl(SERVER_URL);
     
-    // Initialize API
-    ApiClient::Get().SetServerUrl(SERVER_URL);
+    Session session;
+    bool loggedIn = false;
     
-    // Try to load saved token
-    std::string savedToken = LoadToken();
-    if (!savedToken.empty()) {
-        ApiClient::Get().SetToken(savedToken);
+    // Try to restore session
+    session = LoadSession();
+    if (!session.token.empty()) {
+        api.SetToken(session.token);
         
-        PrintInfo("Verifying session...");
-        if (ApiClient::Get().VerifyToken()) {
-            PrintSuccess("Session restored.");
-            MainMenu();
-            return 0;
+        ClearScreen();
+        PrintLogo();
+        PrintInfo("Restoring session...");
+        
+        if (api.VerifyToken()) {
+            PrintSuccess("Session restored!");
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            loggedIn = true;
         } else {
-            PrintInfo("Session expired, please login again.");
+            PrintInfo("Session expired. Please login again.");
+            ClearSession();
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
     
-    // Login flow
-    while (true) {
-        std::cout << "\n  [1] Login\n";
-        std::cout << "  [2] Register\n";
-        std::cout << "  [0] Exit\n\n";
-        std::cout << "  Choice: ";
+    // Login/Register loop
+    while (!loggedIn) {
+        ClearScreen();
+        PrintLogo();
         
+        PrintLine("  [1] Login", 7);
+        PrintLine("  [2] Register (need license key)", 14);
+        PrintLine("  [0] Exit", 8);
+        
+        std::cout << "\n  Choice: ";
         int choice;
         std::cin >> choice;
         
         switch (choice) {
             case 1:
-                if (DoLogin()) {
-                    MainMenu();
-                    return 0;
+                std::cout << "\n";
+                if (DoLogin(api, session)) {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    loggedIn = true;
+                } else {
+                    WaitEnter();
                 }
                 break;
             case 2:
-                // Register flow
+                if (DoRegister(api, session)) {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    loggedIn = true;
+                } else {
+                    WaitEnter();
+                }
                 break;
             case 0:
                 return 0;
         }
     }
     
+    // Main menu
+    MainMenu(api, session);
+    
     return 0;
 }
-

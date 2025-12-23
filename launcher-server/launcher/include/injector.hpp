@@ -15,7 +15,7 @@ namespace launcher {
 // ============================================
 
 enum class InjectionMethod {
-    LoadLibrary,        // Classic LoadLibrary injection
+    LoadLib,            // Classic LoadLibrary injection
     ManualMap,          // Manual PE mapping (more stealthy)
     ThreadHijack,       // Hijack existing thread
     QueueUserAPC,       // APC injection
@@ -42,21 +42,21 @@ public:
     static InjectionResult Inject(
         const std::string& processName,
         const std::string& dllPath,
-        InjectionMethod method = InjectionMethod::LoadLibrary
+        InjectionMethod method = InjectionMethod::LoadLib
     );
     
     // Inject DLL into process by PID
     static InjectionResult InjectByPid(
         uint32_t pid,
         const std::string& dllPath,
-        InjectionMethod method = InjectionMethod::LoadLibrary
+        InjectionMethod method = InjectionMethod::LoadLib
     );
     
     // Wait for process to start, then inject
     static InjectionResult WaitAndInject(
         const std::string& processName,
         const std::string& dllPath,
-        InjectionMethod method = InjectionMethod::LoadLibrary,
+        InjectionMethod method = InjectionMethod::LoadLib,
         uint32_t timeoutMs = 30000
     );
     

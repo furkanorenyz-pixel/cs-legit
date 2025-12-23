@@ -339,16 +339,38 @@ LoginResult ApiClient::Login(const std::string& username, const std::string& pas
     return result;
 }
 
-bool ApiClient::Register(const std::string& username, const std::string& password,
-                         const std::string& licenseKey) {
+LoginResult ApiClient::Register(const std::string& username, const std::string& password,
+                                const std::string& licenseKey) {
     std::string body = "{\"username\":\"" + username + "\",\"password\":\"" + password + "\"";
     if (!licenseKey.empty()) {
         body += ",\"license_key\":\"" + licenseKey + "\"";
     }
-    body += "}";
+    body += ",\"hwid\":\"" + GetHWID() + "\"}";
     
     std::string response = HttpPost("/api/auth/register", body);
-    return response.find("\"user_id\"") != std::string::npos;
+    
+    LoginResult result;
+    result.success = false;
+    
+    if (response.empty()) {
+        result.error = "Connection failed";
+        return result;
+    }
+    
+    if (response.find("\"token\"") != std::string::npos) {
+        result.success = true;
+        result.token = ExtractJsonString(response, "token");
+        result.user.id = ExtractJsonInt(response, "id");
+        result.user.username = ExtractJsonString(response, "username");
+        result.user.is_admin = ExtractJsonBool(response, "is_admin");
+        
+        m_token = result.token;
+    } else {
+        result.error = ExtractJsonString(response, "error");
+        if (result.error.empty()) result.error = "Registration failed";
+    }
+    
+    return result;
 }
 
 bool ApiClient::VerifyToken() {
@@ -405,6 +427,18 @@ bool ApiClient::DownloadCheat(const std::string& gameId, const std::string& vers
 bool ApiClient::DownloadLatest(const std::string& gameId, const std::string& savePath,
                                ProgressCallback progress) {
     return HttpDownload("/api/download/" + gameId + "/latest", savePath, progress);
+}
+
+bool ApiClient::DownloadFile(const std::string& gameId, const std::string& fileType,
+                             const std::string& savePath, std::function<void(size_t, size_t)> progress) {
+    // Wrapper that converts to ProgressCallback
+    ProgressCallback cb = nullptr;
+    if (progress) {
+        cb = [progress](const DownloadProgress& p) {
+            progress(p.downloaded, p.total);
+        };
+    }
+    return HttpDownload("/api/download/" + gameId + "/" + fileType, savePath, cb);
 }
 
 std::string ApiClient::GetOffsets(const std::string& gameId) {

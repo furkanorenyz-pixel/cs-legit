@@ -71,7 +71,7 @@ public:
     
     // Auth
     LoginResult Login(const std::string& username, const std::string& password);
-    bool Register(const std::string& username, const std::string& password, const std::string& licenseKey = "");
+    LoginResult Register(const std::string& username, const std::string& password, const std::string& licenseKey);
     bool VerifyToken();
     void Logout() { m_token.clear(); }
     
@@ -86,6 +86,8 @@ public:
                        const std::string& savePath, ProgressCallback progress = nullptr);
     bool DownloadLatest(const std::string& gameId, const std::string& savePath,
                         ProgressCallback progress = nullptr);
+    bool DownloadFile(const std::string& gameId, const std::string& fileType,
+                      const std::string& savePath, std::function<void(size_t, size_t)> progress = nullptr);
     
     // Offsets
     std::string GetOffsets(const std::string& gameId);
