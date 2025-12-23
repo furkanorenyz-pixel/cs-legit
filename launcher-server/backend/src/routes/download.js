@@ -16,6 +16,7 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-32-byte-key-change
 /**
  * GET /api/download/launcher
  * PUBLIC - Download launcher (no auth required)
+ * NOTE: No rate limit on this specific endpoint to allow updates
  */
 router.get('/launcher', (req, res) => {
     const launcherDir = path.join(__dirname, '../../../storage/games/launcher');

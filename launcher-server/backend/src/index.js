@@ -41,7 +41,11 @@ app.use(limiter);
 const downloadLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 1000, // Increased limit for updates/testing
-    message: { error: 'Download limit exceeded.' }
+    message: { error: 'Download limit exceeded.' },
+    skip: (req) => {
+        // Skip rate limit for launcher updates to allow auto-updates
+        return req.path === '/launcher';
+    }
 });
 app.use('/api/download', downloadLimiter);
 
