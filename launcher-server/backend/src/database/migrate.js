@@ -20,11 +20,11 @@ db.exec(`
     )
 `);
 
-// Licenses table
+// Licenses table (user_id can be NULL for unassigned keys)
 db.exec(`
     CREATE TABLE IF NOT EXISTS licenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
+        user_id INTEGER,
         game_id TEXT NOT NULL,
         license_key TEXT UNIQUE NOT NULL,
         expires_at DATETIME,
