@@ -287,6 +287,135 @@ int ExtractInt(const std::string& json, const std::string& key) {
 }
 
 // ============================================
+// Auto-Update
+// ============================================
+std::atomic<bool> g_updateAvailable{false};
+std::atomic<bool> g_updateDownloading{false};
+std::atomic<float> g_updateProgress{0.0f};
+std::string g_newVersion = "";
+
+// Compare versions (returns: -1 if a < b, 0 if a == b, 1 if a > b)
+int CompareVersions(const std::string& a, const std::string& b) {
+    int aMajor = 0, aMinor = 0, aPatch = 0;
+    int bMajor = 0, bMinor = 0, bPatch = 0;
+    sscanf(a.c_str(), "%d.%d.%d", &aMajor, &aMinor, &aPatch);
+    sscanf(b.c_str(), "%d.%d.%d", &bMajor, &bMinor, &bPatch);
+    
+    if (aMajor != bMajor) return aMajor < bMajor ? -1 : 1;
+    if (aMinor != bMinor) return aMinor < bMinor ? -1 : 1;
+    if (aPatch != bPatch) return aPatch < bPatch ? -1 : 1;
+    return 0;
+}
+
+void CheckForUpdates() {
+    std::thread([]() {
+        try {
+            std::string response = HttpRequest("GET", "/api/games/launcher/version");
+            if (response.empty()) return;
+            
+            std::string serverVersion = ExtractJson(response, "version");
+            if (serverVersion.empty()) return;
+            
+            // Compare with current version
+            if (CompareVersions(LAUNCHER_VERSION, serverVersion) < 0) {
+                g_newVersion = serverVersion;
+                g_updateAvailable = true;
+            }
+        } catch (...) {}
+    }).detach();
+}
+
+bool DownloadUpdate() {
+    g_updateDownloading = true;
+    g_updateProgress = 0.0f;
+    
+    HINTERNET hInternet = InternetOpenA("SingleProject", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+    if (!hInternet) { g_updateDownloading = false; return false; }
+    
+    HINTERNET hConnect = InternetConnectA(hInternet, SERVER_HOST, SERVER_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConnect) { InternetCloseHandle(hInternet); g_updateDownloading = false; return false; }
+    
+    HINTERNET hRequest = HttpOpenRequestA(hConnect, "GET", "/api/download/launcher/latest", NULL, NULL, NULL, INTERNET_FLAG_RELOAD, 0);
+    if (!hRequest) { InternetCloseHandle(hConnect); InternetCloseHandle(hInternet); g_updateDownloading = false; return false; }
+    
+    if (!HttpSendRequestA(hRequest, NULL, 0, NULL, 0)) {
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        g_updateDownloading = false;
+        return false;
+    }
+    
+    // Get file size
+    DWORD contentLength = 0;
+    DWORD bufferSize = sizeof(contentLength);
+    HttpQueryInfoA(hRequest, HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER, &contentLength, &bufferSize, NULL);
+    
+    // Download to temp file
+    std::string tempPath = GetAppDataPath() + "\\launcher_new.exe";
+    std::ofstream outFile(tempPath, std::ios::binary);
+    if (!outFile.is_open()) {
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        g_updateDownloading = false;
+        return false;
+    }
+    
+    char buffer[8192];
+    DWORD bytesRead;
+    DWORD totalRead = 0;
+    
+    while (InternetReadFile(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+        outFile.write(buffer, bytesRead);
+        totalRead += bytesRead;
+        if (contentLength > 0) {
+            g_updateProgress = (float)totalRead / (float)contentLength;
+        }
+    }
+    
+    outFile.close();
+    InternetCloseHandle(hRequest);
+    InternetCloseHandle(hConnect);
+    InternetCloseHandle(hInternet);
+    
+    g_updateDownloading = false;
+    
+    // Verify download
+    if (totalRead < 1024) {
+        DeleteFileA(tempPath.c_str());
+        return false;
+    }
+    
+    return true;
+}
+
+void ApplyUpdate() {
+    std::string currentExe, tempExe, updaterBat;
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    currentExe = exePath;
+    tempExe = GetAppDataPath() + "\\launcher_new.exe";
+    updaterBat = GetAppDataPath() + "\\update.bat";
+    
+    // Create updater script
+    std::ofstream bat(updaterBat);
+    if (bat.is_open()) {
+        bat << "@echo off\n";
+        bat << "timeout /t 2 /nobreak >nul\n";
+        bat << "copy /y \"" << tempExe << "\" \"" << currentExe << "\"\n";
+        bat << "del \"" << tempExe << "\"\n";
+        bat << "start \"\" \"" << currentExe << "\"\n";
+        bat << "del \"%~f0\"\n";
+        bat.close();
+        
+        // Run updater and exit
+        ShellExecuteA(NULL, "open", updaterBat.c_str(), NULL, NULL, SW_HIDE);
+        ExitProcess(0);
+    }
+}
+
+// ============================================
 // API Functions
 // ============================================
 void FetchUserLicenses() {
@@ -1272,6 +1401,74 @@ void RenderMain() {
         ImGui::SetCursorPos(ImVec2(contentX, ws.y - 25));
         ImGui::TextColored(theme::textDim, PROJECT_NAME " v" LAUNCHER_VERSION);
         
+        // ===== UPDATE NOTIFICATION =====
+        if (g_updateAvailable && !g_updateDownloading) {
+            ImVec2 popupPos(ws.x - 270, ws.y - 100);
+            ImVec2 popupSize(260, 90);
+            
+            // Background
+            dl->AddRectFilled(popupPos, ImVec2(popupPos.x + popupSize.x, popupPos.y + popupSize.y), 
+                IM_COL32(20, 100, 50, 240), 10.0f);
+            dl->AddRect(popupPos, ImVec2(popupPos.x + popupSize.x, popupPos.y + popupSize.y), 
+                IM_COL32(40, 200, 100, 255), 10.0f, 0, 2.0f);
+            
+            // Text
+            ImGui::SetCursorPos(ImVec2(popupPos.x + 15, popupPos.y + 10));
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "Update Available!");
+            ImGui::SetCursorPos(ImVec2(popupPos.x + 15, popupPos.y + 28));
+            ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.8f, 1.0f), "v%s -> v%s", LAUNCHER_VERSION, g_newVersion.c_str());
+            
+            // Update button
+            ImGui::SetCursorPos(ImVec2(popupPos.x + 15, popupPos.y + 52));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.6f, 0.3f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.75f, 0.4f, 1.0f));
+            if (ImGui::Button("Update Now", ImVec2(140, 28))) {
+                std::thread([]() {
+                    if (DownloadUpdate()) {
+                        ApplyUpdate();
+                    } else {
+                        g_errorMsg = "Update download failed";
+                        g_updateAvailable = false;
+                    }
+                }).detach();
+            }
+            ImGui::PopStyleColor(2);
+            
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+            if (ImGui::Button("X##close_update", ImVec2(28, 28))) {
+                g_updateAvailable = false;
+            }
+            ImGui::PopStyleColor();
+        }
+        
+        // ===== UPDATE PROGRESS =====
+        if (g_updateDownloading) {
+            ImVec2 popupPos(ws.x - 270, ws.y - 80);
+            ImVec2 popupSize(260, 70);
+            
+            dl->AddRectFilled(popupPos, ImVec2(popupPos.x + popupSize.x, popupPos.y + popupSize.y), 
+                IM_COL32(20, 60, 100, 240), 10.0f);
+            
+            ImGui::SetCursorPos(ImVec2(popupPos.x + 15, popupPos.y + 12));
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "Downloading update...");
+            
+            // Progress bar
+            float progress = g_updateProgress.load();
+            ImVec2 barPos(popupPos.x + 15, popupPos.y + 38);
+            ImVec2 barSize(230, 18);
+            dl->AddRectFilled(barPos, ImVec2(barPos.x + barSize.x, barPos.y + barSize.y), 
+                IM_COL32(30, 30, 50, 255), 6.0f);
+            dl->AddRectFilled(barPos, ImVec2(barPos.x + barSize.x * progress, barPos.y + barSize.y), 
+                IM_COL32(80, 180, 255, 255), 6.0f);
+            
+            char progressText[32];
+            sprintf(progressText, "%.0f%%", progress * 100);
+            ImVec2 textSize = ImGui::CalcTextSize(progressText);
+            dl->AddText(ImVec2(barPos.x + barSize.x / 2 - textSize.x / 2, barPos.y + 2), 
+                IM_COL32(255, 255, 255, 255), progressText);
+        }
+        
         ImGui::PopStyleVar();
     }
     ImGui::End();
@@ -1361,6 +1558,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     
     SetupStyle();
     g_hwid = GetHWID();
+    
+    // Check for updates on startup
+    CheckForUpdates();
     
     MSG msg;
     ZeroMemory(&msg, sizeof(msg));
