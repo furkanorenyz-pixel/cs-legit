@@ -1,6 +1,7 @@
 /*
  * CS-LEGIT Launcher v1.0.0
  * Professional Gaming Software
+ * Sidebar Navigation Design
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -20,6 +21,7 @@
 #include <fstream>
 #include <atomic>
 #include <vector>
+#include <map>
 
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "d3d11.lib")
@@ -36,12 +38,34 @@ namespace fs = std::filesystem;
 // Configuration
 // ============================================
 #define LAUNCHER_VERSION "1.0.0"
-#define CHEAT_VERSION "1.0.0"
-#define WINDOW_WIDTH 480
-#define WINDOW_HEIGHT 620
+#define WINDOW_WIDTH 700
+#define WINDOW_HEIGHT 500
 
 #define SERVER_HOST "138.124.0.8"
 #define SERVER_PORT 80
+
+// ============================================
+// Game Data
+// ============================================
+struct GameInfo {
+    std::string id;
+    std::string name;
+    std::string icon;
+    std::string processName;
+    bool hasLicense;
+    int daysRemaining; // -1 = lifetime, 0 = expired
+    std::string version;
+    bool available;
+};
+
+std::vector<GameInfo> g_games = {
+    {"cs2", "Counter-Strike 2", "CS", "cs2.exe", false, 0, "1.0.0", true},
+    {"dayz", "DayZ", "DZ", "DayZ_x64.exe", false, 0, "1.0.0", false},
+    {"rust", "Rust", "RS", "RustClient.exe", false, 0, "---", false},
+    {"apex", "Apex Legends", "AP", "r5apex.exe", false, 0, "---", false}
+};
+
+int g_selectedGame = 0;
 
 // ============================================
 // App State
@@ -52,10 +76,10 @@ Screen g_currentScreen = Screen::Splash;
 char g_username[64] = "";
 char g_password[64] = "";
 char g_licenseKey[128] = "";
-char g_activateLicenseKey[128] = "";
+char g_activateKey[128] = "";
 std::string g_errorMsg = "";
-std::string g_statusMsg = "";
 std::string g_successMsg = "";
+std::string g_statusMsg = "";
 std::string g_token = "";
 
 std::atomic<bool> g_isLoading{false};
@@ -63,31 +87,26 @@ std::atomic<float> g_downloadProgress{0.0f};
 std::atomic<bool> g_isDownloading{false};
 std::atomic<bool> g_cheatRunning{false};
 
-// Animation
 float g_animTimer = 0.0f;
 float g_splashTimer = 0.0f;
 float g_fadeAlpha = 0.0f;
 
-// User data
 std::string g_displayName = "";
 std::string g_hwid = "";
-bool g_hasValidLicense = false;
-bool g_hwidBound = false;
-std::string g_licenseExpiry = "";
-int g_daysRemaining = -1; // -1 = lifetime
 
 // Particles
 struct Particle { float x, y, speed, size, alpha; };
 std::vector<Particle> g_particles;
 
 // ============================================
-// Theme Colors
+// Theme
 // ============================================
 namespace theme {
-    const ImVec4 background = ImVec4(0.04f, 0.04f, 0.06f, 1.0f);
+    const ImVec4 bg = ImVec4(0.04f, 0.04f, 0.06f, 1.0f);
+    const ImVec4 sidebar = ImVec4(0.06f, 0.06f, 0.09f, 1.0f);
     const ImVec4 surface = ImVec4(0.08f, 0.08f, 0.12f, 1.0f);
-    const ImVec4 surfaceHover = ImVec4(0.10f, 0.10f, 0.15f, 1.0f);
-    const ImVec4 surfaceBorder = ImVec4(0.15f, 0.15f, 0.22f, 1.0f);
+    const ImVec4 surfaceHover = ImVec4(0.12f, 0.12f, 0.18f, 1.0f);
+    const ImVec4 border = ImVec4(0.15f, 0.15f, 0.22f, 1.0f);
     
     const ImVec4 accent = ImVec4(0.55f, 0.36f, 0.95f, 1.0f);
     const ImVec4 accentHover = ImVec4(0.65f, 0.46f, 1.0f, 1.0f);
@@ -97,11 +116,11 @@ namespace theme {
     const ImVec4 error = ImVec4(0.95f, 0.25f, 0.30f, 1.0f);
     
     const ImVec4 text = ImVec4(0.95f, 0.95f, 0.98f, 1.0f);
-    const ImVec4 textSecondary = ImVec4(0.60f, 0.60f, 0.68f, 1.0f);
+    const ImVec4 textSec = ImVec4(0.60f, 0.60f, 0.68f, 1.0f);
     const ImVec4 textDim = ImVec4(0.40f, 0.40f, 0.48f, 1.0f);
     
-    const ImU32 gradientStart = IM_COL32(140, 90, 245, 255);
-    const ImU32 gradientEnd = IM_COL32(60, 180, 255, 255);
+    const ImU32 gradientA = IM_COL32(140, 90, 245, 255);
+    const ImU32 gradientB = IM_COL32(60, 180, 255, 255);
 }
 
 // ============================================
@@ -121,7 +140,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 // ============================================
-// Utility Functions
+// Utilities
 // ============================================
 std::string GetAppDataPath() {
     char path[MAX_PATH];
@@ -166,9 +185,10 @@ bool LoadSession() {
 void ClearSession() {
     g_token = "";
     g_displayName = "";
-    g_hasValidLicense = false;
-    g_hwidBound = false;
-    g_daysRemaining = -1;
+    for (auto& g : g_games) {
+        g.hasLicense = false;
+        g.daysRemaining = 0;
+    }
     DeleteFileA((GetAppDataPath() + "\\session.dat").c_str());
 }
 
@@ -177,19 +197,13 @@ void InitParticles() {
     g_particles.clear();
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> distX(0.0f, (float)WINDOW_WIDTH);
-    std::uniform_real_distribution<float> distY(0.0f, (float)WINDOW_HEIGHT);
-    std::uniform_real_distribution<float> distSpeed(10.0f, 30.0f);
-    std::uniform_real_distribution<float> distSize(1.0f, 2.5f);
-    std::uniform_real_distribution<float> distAlpha(0.1f, 0.3f);
-    
-    for (int i = 0; i < 40; i++) {
+    for (int i = 0; i < 30; i++) {
         Particle p;
-        p.x = distX(gen);
-        p.y = distY(gen);
-        p.speed = distSpeed(gen);
-        p.size = distSize(gen);
-        p.alpha = distAlpha(gen);
+        p.x = (float)(rand() % WINDOW_WIDTH);
+        p.y = (float)(rand() % WINDOW_HEIGHT);
+        p.speed = 10.0f + (rand() % 20);
+        p.size = 1.0f + (rand() % 2);
+        p.alpha = 0.1f + (rand() % 20) / 100.0f;
         g_particles.push_back(p);
     }
 }
@@ -210,12 +224,8 @@ void DrawParticles(ImDrawList* dl) {
     }
 }
 
-void DrawGradientRect(ImDrawList* dl, ImVec2 pos, ImVec2 size, ImU32 top, ImU32 bottom) {
-    dl->AddRectFilledMultiColor(pos, ImVec2(pos.x + size.x, pos.y + size.y), top, top, bottom, bottom);
-}
-
 // ============================================
-// HTTP API
+// HTTP
 // ============================================
 std::string HttpRequest(const std::string& method, const std::string& path, const std::string& data = "") {
     HINTERNET hInternet = InternetOpenA("CS-Legit", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
@@ -230,12 +240,9 @@ std::string HttpRequest(const std::string& method, const std::string& path, cons
     std::string headers = "Content-Type: application/json\r\n";
     if (!g_token.empty()) headers += "Authorization: Bearer " + g_token + "\r\n";
     
-    BOOL result;
-    if (data.empty()) {
-        result = HttpSendRequestA(hRequest, headers.c_str(), (DWORD)headers.length(), NULL, 0);
-    } else {
-        result = HttpSendRequestA(hRequest, headers.c_str(), (DWORD)headers.length(), (LPVOID)data.c_str(), (DWORD)data.length());
-    }
+    BOOL result = data.empty() 
+        ? HttpSendRequestA(hRequest, headers.c_str(), (DWORD)headers.length(), NULL, 0)
+        : HttpSendRequestA(hRequest, headers.c_str(), (DWORD)headers.length(), (LPVOID)data.c_str(), (DWORD)data.length());
     
     if (!result) {
         InternetCloseHandle(hRequest);
@@ -255,27 +262,19 @@ std::string HttpRequest(const std::string& method, const std::string& path, cons
     InternetCloseHandle(hRequest);
     InternetCloseHandle(hConnect);
     InternetCloseHandle(hInternet);
-    
     return response;
 }
 
 std::string ExtractJson(const std::string& json, const std::string& key) {
-    std::string searchKey = "\"" + key + "\":";
-    size_t pos = json.find(searchKey);
+    std::string search = "\"" + key + "\":";
+    size_t pos = json.find(search);
     if (pos == std::string::npos) return "";
-    
-    pos += searchKey.length();
+    pos += search.length();
     while (pos < json.length() && (json[pos] == ' ' || json[pos] == '"')) pos++;
-    
     size_t end = pos;
-    bool inString = json[pos - 1] == '"';
-    
-    if (inString) {
-        end = json.find('"', pos);
-    } else {
-        while (end < json.length() && json[end] != ',' && json[end] != '}') end++;
-    }
-    
+    bool inStr = json[pos - 1] == '"';
+    if (inStr) end = json.find('"', pos);
+    else while (end < json.length() && json[end] != ',' && json[end] != '}') end++;
     return json.substr(pos, end - pos);
 }
 
@@ -292,14 +291,22 @@ int ExtractInt(const std::string& json, const std::string& key) {
 // ============================================
 // API Functions
 // ============================================
-void FetchUserInfo() {
+void FetchUserLicenses() {
     std::string response = HttpRequest("GET", "/api/auth/me");
     if (response.empty()) return;
     
-    g_hasValidLicense = ExtractBool(response, "has_license");
-    g_hwidBound = !ExtractJson(response, "hwid").empty();
-    g_licenseExpiry = ExtractJson(response, "license_expires");
-    g_daysRemaining = ExtractInt(response, "days_remaining");
+    // Parse licenses array
+    // For now, just check CS2
+    for (auto& game : g_games) {
+        game.hasLicense = false;
+        game.daysRemaining = 0;
+    }
+    
+    // Find CS2 license
+    if (response.find("\"cs2\"") != std::string::npos || response.find("\"game_id\":\"cs2\"") != std::string::npos) {
+        g_games[0].hasLicense = true;
+        g_games[0].daysRemaining = ExtractInt(response, "days_remaining");
+    }
 }
 
 void DoLogin() {
@@ -329,14 +336,11 @@ void DoLogin() {
         if (response.find("\"token\"") != std::string::npos) {
             g_token = ExtractJson(response, "token");
             g_displayName = g_username;
-            g_hasValidLicense = ExtractBool(response, "has_license");
-            g_hwidBound = ExtractBool(response, "hwid_bound");
-            g_daysRemaining = ExtractInt(response, "days_remaining");
-            
             SaveSession(g_token, g_displayName);
+            FetchUserLicenses();
             g_currentScreen = Screen::Main;
             g_fadeAlpha = 0.0f;
-            g_successMsg = "Welcome, " + g_displayName + "!";
+            g_successMsg = "Welcome!";
         } else {
             g_errorMsg = ExtractJson(response, "error");
             if (g_errorMsg.empty()) g_errorMsg = "Login failed";
@@ -355,7 +359,6 @@ void DoRegister() {
     
     g_isLoading = true;
     g_errorMsg = "";
-    g_statusMsg = "Creating account...";
     
     std::thread([]() {
         std::string data = "{\"username\":\"" + std::string(g_username) + 
@@ -370,8 +373,8 @@ void DoRegister() {
             return;
         }
         
-        if (response.find("\"success\"") != std::string::npos || response.find("\"token\"") != std::string::npos) {
-            g_successMsg = "Account created! Please login.";
+        if (response.find("\"success\"") != std::string::npos) {
+            g_successMsg = "Account created! Login now.";
             g_currentScreen = Screen::Login;
             g_fadeAlpha = 0.0f;
             memset(g_licenseKey, 0, sizeof(g_licenseKey));
@@ -381,43 +384,32 @@ void DoRegister() {
         }
         
         g_isLoading = false;
-        g_statusMsg = "";
     }).detach();
 }
 
-void ActivateLicense() {
-    if (strlen(g_activateLicenseKey) == 0) {
+void ActivateLicense(const std::string& gameId) {
+    if (strlen(g_activateKey) == 0) {
         g_errorMsg = "Enter license key";
         return;
     }
     
     g_isLoading = true;
     g_errorMsg = "";
-    g_statusMsg = "Activating...";
     
-    std::thread([]() {
-        std::string data = "{\"license_key\":\"" + std::string(g_activateLicenseKey) + "\"}";
+    std::thread([gameId]() {
+        std::string data = "{\"license_key\":\"" + std::string(g_activateKey) + "\"}";
         std::string response = HttpRequest("POST", "/api/auth/activate", data);
-        
-        if (response.empty()) {
-            g_errorMsg = "Connection failed";
-            g_isLoading = false;
-            return;
-        }
         
         if (response.find("\"success\"") != std::string::npos) {
             g_successMsg = "License activated!";
-            g_hasValidLicense = true;
-            g_daysRemaining = ExtractInt(response, "days_remaining");
-            memset(g_activateLicenseKey, 0, sizeof(g_activateLicenseKey));
-            FetchUserInfo();
+            memset(g_activateKey, 0, sizeof(g_activateKey));
+            FetchUserLicenses();
         } else {
             g_errorMsg = ExtractJson(response, "error");
             if (g_errorMsg.empty()) g_errorMsg = "Activation failed";
         }
         
         g_isLoading = false;
-        g_statusMsg = "";
     }).detach();
 }
 
@@ -439,7 +431,6 @@ bool DownloadFile(const std::string& url, const std::string& savePath) {
         return false;
     }
     
-    // Get file size
     DWORD contentLength = 0;
     DWORD bufLen = sizeof(contentLength);
     HttpQueryInfoA(hRequest, HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER, &contentLength, &bufLen, NULL);
@@ -453,28 +444,30 @@ bool DownloadFile(const std::string& url, const std::string& savePath) {
     }
     
     char buffer[8192];
-    DWORD bytesRead;
-    DWORD totalRead = 0;
-    
+    DWORD bytesRead, totalRead = 0;
     while (InternetReadFile(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
         file.write(buffer, bytesRead);
         totalRead += bytesRead;
-        if (contentLength > 0) {
-            g_downloadProgress = (float)totalRead / (float)contentLength;
-        }
+        if (contentLength > 0) g_downloadProgress = (float)totalRead / contentLength;
     }
     
     file.close();
     InternetCloseHandle(hRequest);
     InternetCloseHandle(hConnect);
     InternetCloseHandle(hInternet);
-    
     return totalRead > 0;
 }
 
-void LaunchCheat() {
-    if (!g_hasValidLicense) {
-        g_errorMsg = "No active license!";
+void LaunchGame(int gameIndex) {
+    GameInfo& game = g_games[gameIndex];
+    
+    if (!game.hasLicense) {
+        g_errorMsg = "No license for " + game.name;
+        return;
+    }
+    
+    if (!game.available) {
+        g_errorMsg = game.name + " coming soon!";
         return;
     }
     
@@ -483,23 +476,22 @@ void LaunchCheat() {
     g_statusMsg = "Downloading...";
     g_errorMsg = "";
     
-    std::thread([]() {
-        std::string savePath = GetAppDataPath() + "\\cs2_external.exe";
+    std::thread([gameIndex, &game]() {
+        std::string savePath = GetAppDataPath() + "\\" + game.id + "_external.exe";
+        std::string url = "/api/download/" + game.id + "/external";
         
-        if (DownloadFile("/api/download/cs2/external", savePath)) {
-            g_statusMsg = "Launching...";
-            Sleep(500);
+        if (DownloadFile(url, savePath)) {
+            g_statusMsg = "Checking game...";
             
-            // Check if CS2 is running
-            bool cs2Running = false;
+            // Check if game is running
+            bool gameRunning = false;
             HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
             if (hSnap != INVALID_HANDLE_VALUE) {
-                PROCESSENTRY32 pe;
-                pe.dwSize = sizeof(pe);
+                PROCESSENTRY32 pe = { sizeof(pe) };
                 if (Process32First(hSnap, &pe)) {
                     do {
-                        if (_stricmp(pe.szExeFile, "cs2.exe") == 0) {
-                            cs2Running = true;
+                        if (_stricmp(pe.szExeFile, game.processName.c_str()) == 0) {
+                            gameRunning = true;
                             break;
                         }
                     } while (Process32Next(hSnap, &pe));
@@ -507,22 +499,24 @@ void LaunchCheat() {
                 CloseHandle(hSnap);
             }
             
-            if (!cs2Running) {
-                g_errorMsg = "Start CS2 first!";
+            if (!gameRunning) {
+                g_errorMsg = "Start " + game.name + " first!";
                 g_isDownloading = false;
                 return;
             }
             
-            // Launch cheat
+            g_statusMsg = "Launching...";
+            Sleep(500);
+            
             STARTUPINFOA si = { sizeof(si) };
             PROCESS_INFORMATION pi;
             if (CreateProcessA(savePath.c_str(), NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
                 g_cheatRunning = true;
-                g_successMsg = "Cheat running!";
+                g_successMsg = "Running!";
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
             } else {
-                g_errorMsg = "Failed to launch cheat";
+                g_errorMsg = "Launch failed";
             }
         } else {
             g_errorMsg = "Download failed";
@@ -539,30 +533,28 @@ void DoLogout() {
     g_fadeAlpha = 0.0f;
     g_successMsg = "";
     g_errorMsg = "";
+    g_cheatRunning = false;
     memset(g_username, 0, sizeof(g_username));
     memset(g_password, 0, sizeof(g_password));
 }
 
 // ============================================
-// UI Components
+// UI
 // ============================================
 void StyledInput(const char* label, char* buf, size_t size, bool password = false) {
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14, 12));
     ImGui::PushStyleColor(ImGuiCol_FrameBg, theme::surface);
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, theme::surfaceHover);
-    ImGui::PushStyleColor(ImGuiCol_Border, theme::surfaceBorder);
+    ImGui::PushStyleColor(ImGuiCol_Border, theme::border);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-    
     ImGui::InputText(label, buf, size, password ? ImGuiInputTextFlags_Password : 0);
-    
     ImGui::PopStyleVar(3);
     ImGui::PopStyleColor(3);
 }
 
 bool StyledButton(const char* label, ImVec2 size, bool enabled = true) {
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
-    
     if (!enabled) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.18f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.15f, 0.18f, 1.0f));
@@ -572,53 +564,44 @@ bool StyledButton(const char* label, ImVec2 size, bool enabled = true) {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme::accentHover);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
     }
-    
     bool clicked = ImGui::Button(label, size);
-    
     ImGui::PopStyleColor(3);
     ImGui::PopStyleVar();
-    
     return clicked && enabled;
 }
 
 // ============================================
-// Screen Renders
+// Screens
 // ============================================
 void RenderSplash() {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImVec2 ws = ImGui::GetIO().DisplaySize;
     ImVec2 center(ws.x * 0.5f, ws.y * 0.5f);
     
-    DrawGradientRect(dl, ImVec2(0, 0), ws, IM_COL32(10, 10, 18, 255), IM_COL32(5, 5, 10, 255));
+    dl->AddRectFilledMultiColor(ImVec2(0, 0), ws, 
+        IM_COL32(10, 10, 18, 255), IM_COL32(10, 10, 18, 255),
+        IM_COL32(5, 5, 10, 255), IM_COL32(5, 5, 10, 255));
     DrawParticles(dl);
     
-    // Logo
     float scale = fminf(g_splashTimer / 0.5f, 1.0f);
-    dl->AddCircleFilled(ImVec2(center.x, center.y - 40), 45.0f * scale, theme::gradientStart, 32);
+    dl->AddCircleFilled(ImVec2(center.x, center.y - 30), 40.0f * scale, theme::gradientA, 32);
     
     if (g_splashTimer > 0.3f) {
         float alpha = fminf((g_splashTimer - 0.3f) / 0.4f, 1.0f);
-        ImU32 col = IM_COL32(255, 255, 255, (int)(alpha * 255));
-        
         const char* title = "CS-LEGIT";
         ImVec2 ts = ImGui::CalcTextSize(title);
-        dl->AddText(ImVec2(center.x - ts.x * 0.5f, center.y + 30), col, title);
-        
-        const char* ver = "v" LAUNCHER_VERSION;
-        ImVec2 vs = ImGui::CalcTextSize(ver);
-        dl->AddText(ImVec2(center.x - vs.x * 0.5f, center.y + 55), IM_COL32(140, 90, 245, (int)(alpha * 200)), ver);
+        dl->AddText(ImVec2(center.x - ts.x * 0.5f, center.y + 30), 
+            IM_COL32(255, 255, 255, (int)(alpha * 255)), title);
     }
     
-    // Progress bar
-    float barW = 180.0f;
     float progress = fminf(g_splashTimer / 2.0f, 1.0f);
-    ImVec2 barPos(center.x - barW * 0.5f, center.y + 90);
-    dl->AddRectFilled(barPos, ImVec2(barPos.x + barW, barPos.y + 4), IM_COL32(40, 40, 60, 255), 2.0f);
-    dl->AddRectFilled(barPos, ImVec2(barPos.x + barW * progress, barPos.y + 4), theme::gradientStart, 2.0f);
+    ImVec2 barPos(center.x - 90, center.y + 70);
+    dl->AddRectFilled(barPos, ImVec2(barPos.x + 180, barPos.y + 4), IM_COL32(40, 40, 60, 255), 2.0f);
+    dl->AddRectFilled(barPos, ImVec2(barPos.x + 180 * progress, barPos.y + 4), theme::gradientA, 2.0f);
     
     if (g_splashTimer > 2.2f) {
         if (LoadSession()) {
-            FetchUserInfo();
+            FetchUserLicenses();
             g_currentScreen = Screen::Main;
         } else {
             g_currentScreen = Screen::Login;
@@ -631,13 +614,15 @@ void RenderLogin() {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImVec2 ws = ImGui::GetIO().DisplaySize;
     
-    DrawGradientRect(dl, ImVec2(0, 0), ws, IM_COL32(10, 10, 18, 255), IM_COL32(5, 5, 10, 255));
+    dl->AddRectFilledMultiColor(ImVec2(0, 0), ws, 
+        IM_COL32(10, 10, 18, 255), IM_COL32(10, 10, 18, 255),
+        IM_COL32(5, 5, 10, 255), IM_COL32(5, 5, 10, 255));
     DrawParticles(dl);
     
     g_fadeAlpha = fminf(g_fadeAlpha + ImGui::GetIO().DeltaTime * 3.0f, 1.0f);
     
-    float contentW = 320.0f;
-    float startX = (ws.x - contentW) * 0.5f;
+    float w = 300.0f;
+    float x = (ws.x - w) * 0.5f;
     
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ws);
@@ -646,61 +631,52 @@ void RenderLogin() {
     if (ImGui::Begin("##login", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove)) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, g_fadeAlpha);
         
-        // Logo
-        dl->AddCircleFilled(ImVec2(ws.x * 0.5f, 100), 35.0f, theme::gradientStart, 32);
+        dl->AddCircleFilled(ImVec2(ws.x * 0.5f, 90), 32.0f, theme::gradientA, 32);
         
-        ImGui::SetCursorPos(ImVec2(startX, 160));
-        
+        ImGui::SetCursorPos(ImVec2(x, 145));
         float tw = ImGui::CalcTextSize("Sign In").x;
         ImGui::SetCursorPosX((ws.x - tw) * 0.5f);
         ImGui::TextColored(theme::text, "Sign In");
         
-        ImGui::Dummy(ImVec2(0, 30));
+        ImGui::Dummy(ImVec2(0, 25));
         
-        ImGui::SetCursorPosX(startX);
-        ImGui::TextColored(theme::textSecondary, "Username");
-        ImGui::SetCursorPosX(startX);
-        ImGui::SetNextItemWidth(contentW);
+        ImGui::SetCursorPosX(x);
+        ImGui::TextColored(theme::textSec, "Username");
+        ImGui::SetCursorPosX(x);
+        ImGui::SetNextItemWidth(w);
         StyledInput("##user", g_username, sizeof(g_username));
         
-        ImGui::Dummy(ImVec2(0, 10));
+        ImGui::Dummy(ImVec2(0, 8));
         
-        ImGui::SetCursorPosX(startX);
-        ImGui::TextColored(theme::textSecondary, "Password");
-        ImGui::SetCursorPosX(startX);
-        ImGui::SetNextItemWidth(contentW);
+        ImGui::SetCursorPosX(x);
+        ImGui::TextColored(theme::textSec, "Password");
+        ImGui::SetCursorPosX(x);
+        ImGui::SetNextItemWidth(w);
         StyledInput("##pass", g_password, sizeof(g_password), true);
         
-        ImGui::Dummy(ImVec2(0, 20));
+        ImGui::Dummy(ImVec2(0, 18));
         
-        ImGui::SetCursorPosX(startX);
-        if (StyledButton(g_isLoading ? "  Signing in...  " : "  SIGN IN  ", ImVec2(contentW, 48), !g_isLoading)) {
+        ImGui::SetCursorPosX(x);
+        if (StyledButton(g_isLoading ? "  Signing in...  " : "  SIGN IN  ", ImVec2(w, 46), !g_isLoading)) {
             DoLogin();
         }
         
-        // Messages
         if (!g_errorMsg.empty()) {
-            ImGui::Dummy(ImVec2(0, 10));
-            float ew = ImGui::CalcTextSize(g_errorMsg.c_str()).x;
-            ImGui::SetCursorPosX((ws.x - ew) * 0.5f);
+            ImGui::Dummy(ImVec2(0, 8));
+            ImGui::SetCursorPosX((ws.x - ImGui::CalcTextSize(g_errorMsg.c_str()).x) * 0.5f);
             ImGui::TextColored(theme::error, "%s", g_errorMsg.c_str());
         }
-        
         if (!g_successMsg.empty()) {
-            ImGui::Dummy(ImVec2(0, 10));
-            float sw = ImGui::CalcTextSize(g_successMsg.c_str()).x;
-            ImGui::SetCursorPosX((ws.x - sw) * 0.5f);
+            ImGui::Dummy(ImVec2(0, 8));
+            ImGui::SetCursorPosX((ws.x - ImGui::CalcTextSize(g_successMsg.c_str()).x) * 0.5f);
             ImGui::TextColored(theme::success, "%s", g_successMsg.c_str());
         }
         
-        ImGui::Dummy(ImVec2(0, 25));
-        
-        float lw = ImGui::CalcTextSize("No account?").x + ImGui::CalcTextSize("Register").x + 10;
-        ImGui::SetCursorPosX((ws.x - lw) * 0.5f);
+        ImGui::Dummy(ImVec2(0, 20));
+        ImGui::SetCursorPosX((ws.x - 180) * 0.5f);
         ImGui::TextColored(theme::textDim, "No account?");
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.2f, 0.3f, 0.5f));
         ImGui::PushStyleColor(ImGuiCol_Text, theme::accent);
         if (ImGui::SmallButton("Register")) {
             g_currentScreen = Screen::Register;
@@ -708,12 +684,9 @@ void RenderLogin() {
             g_errorMsg = "";
             g_successMsg = "";
         }
-        ImGui::PopStyleColor(3);
+        ImGui::PopStyleColor(2);
         
-        // Version
-        ImGui::SetCursorPos(ImVec2(0, ws.y - 30));
-        float vw = ImGui::CalcTextSize("v" LAUNCHER_VERSION).x;
-        ImGui::SetCursorPosX((ws.x - vw) * 0.5f);
+        ImGui::SetCursorPos(ImVec2((ws.x - 60) * 0.5f, ws.y - 28));
         ImGui::TextColored(theme::textDim, "v" LAUNCHER_VERSION);
         
         ImGui::PopStyleVar();
@@ -726,13 +699,15 @@ void RenderRegister() {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImVec2 ws = ImGui::GetIO().DisplaySize;
     
-    DrawGradientRect(dl, ImVec2(0, 0), ws, IM_COL32(10, 10, 18, 255), IM_COL32(5, 5, 10, 255));
+    dl->AddRectFilledMultiColor(ImVec2(0, 0), ws, 
+        IM_COL32(10, 10, 18, 255), IM_COL32(10, 10, 18, 255),
+        IM_COL32(5, 5, 10, 255), IM_COL32(5, 5, 10, 255));
     DrawParticles(dl);
     
     g_fadeAlpha = fminf(g_fadeAlpha + ImGui::GetIO().DeltaTime * 3.0f, 1.0f);
     
-    float contentW = 320.0f;
-    float startX = (ws.x - contentW) * 0.5f;
+    float w = 300.0f;
+    float x = (ws.x - w) * 0.5f;
     
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ws);
@@ -741,67 +716,62 @@ void RenderRegister() {
     if (ImGui::Begin("##reg", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove)) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, g_fadeAlpha);
         
-        dl->AddCircleFilled(ImVec2(ws.x * 0.5f, 80), 30.0f, theme::gradientStart, 32);
+        dl->AddCircleFilled(ImVec2(ws.x * 0.5f, 75), 28.0f, theme::gradientA, 32);
         
-        ImGui::SetCursorPos(ImVec2(startX, 130));
-        
+        ImGui::SetCursorPos(ImVec2(x, 120));
         float tw = ImGui::CalcTextSize("Create Account").x;
         ImGui::SetCursorPosX((ws.x - tw) * 0.5f);
         ImGui::TextColored(theme::text, "Create Account");
         
-        ImGui::Dummy(ImVec2(0, 25));
+        ImGui::Dummy(ImVec2(0, 20));
         
-        ImGui::SetCursorPosX(startX);
-        ImGui::TextColored(theme::textSecondary, "License Key");
-        ImGui::SetCursorPosX(startX);
-        ImGui::SetNextItemWidth(contentW);
+        ImGui::SetCursorPosX(x);
+        ImGui::TextColored(theme::textSec, "License Key");
+        ImGui::SetCursorPosX(x);
+        ImGui::SetNextItemWidth(w);
         StyledInput("##key", g_licenseKey, sizeof(g_licenseKey));
         
-        ImGui::Dummy(ImVec2(0, 8));
+        ImGui::Dummy(ImVec2(0, 6));
         
-        ImGui::SetCursorPosX(startX);
-        ImGui::TextColored(theme::textSecondary, "Username");
-        ImGui::SetCursorPosX(startX);
-        ImGui::SetNextItemWidth(contentW);
+        ImGui::SetCursorPosX(x);
+        ImGui::TextColored(theme::textSec, "Username");
+        ImGui::SetCursorPosX(x);
+        ImGui::SetNextItemWidth(w);
         StyledInput("##ruser", g_username, sizeof(g_username));
         
-        ImGui::Dummy(ImVec2(0, 8));
+        ImGui::Dummy(ImVec2(0, 6));
         
-        ImGui::SetCursorPosX(startX);
-        ImGui::TextColored(theme::textSecondary, "Password");
-        ImGui::SetCursorPosX(startX);
-        ImGui::SetNextItemWidth(contentW);
+        ImGui::SetCursorPosX(x);
+        ImGui::TextColored(theme::textSec, "Password");
+        ImGui::SetCursorPosX(x);
+        ImGui::SetNextItemWidth(w);
         StyledInput("##rpass", g_password, sizeof(g_password), true);
         
-        ImGui::Dummy(ImVec2(0, 18));
+        ImGui::Dummy(ImVec2(0, 16));
         
-        ImGui::SetCursorPosX(startX);
-        if (StyledButton(g_isLoading ? "  Creating...  " : "  CREATE ACCOUNT  ", ImVec2(contentW, 48), !g_isLoading)) {
+        ImGui::SetCursorPosX(x);
+        if (StyledButton(g_isLoading ? "  Creating...  " : "  CREATE ACCOUNT  ", ImVec2(w, 46), !g_isLoading)) {
             DoRegister();
         }
         
         if (!g_errorMsg.empty()) {
-            ImGui::Dummy(ImVec2(0, 10));
-            float ew = ImGui::CalcTextSize(g_errorMsg.c_str()).x;
-            ImGui::SetCursorPosX((ws.x - ew) * 0.5f);
+            ImGui::Dummy(ImVec2(0, 8));
+            ImGui::SetCursorPosX((ws.x - ImGui::CalcTextSize(g_errorMsg.c_str()).x) * 0.5f);
             ImGui::TextColored(theme::error, "%s", g_errorMsg.c_str());
         }
         
-        ImGui::Dummy(ImVec2(0, 20));
-        
-        float lw = ImGui::CalcTextSize("Have account?").x + ImGui::CalcTextSize("Sign In").x + 10;
-        ImGui::SetCursorPosX((ws.x - lw) * 0.5f);
+        ImGui::Dummy(ImVec2(0, 15));
+        ImGui::SetCursorPosX((ws.x - 180) * 0.5f);
         ImGui::TextColored(theme::textDim, "Have account?");
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.2f, 0.3f, 0.5f));
         ImGui::PushStyleColor(ImGuiCol_Text, theme::accent);
         if (ImGui::SmallButton("Sign In")) {
             g_currentScreen = Screen::Login;
             g_fadeAlpha = 0.0f;
             g_errorMsg = "";
         }
-        ImGui::PopStyleColor(3);
+        ImGui::PopStyleColor(2);
         
         ImGui::PopStyleVar();
     }
@@ -813,183 +783,237 @@ void RenderMain() {
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImVec2 ws = ImGui::GetIO().DisplaySize;
     
-    DrawGradientRect(dl, ImVec2(0, 0), ws, IM_COL32(10, 10, 18, 255), IM_COL32(5, 5, 10, 255));
-    DrawParticles(dl);
-    
     g_fadeAlpha = fminf(g_fadeAlpha + ImGui::GetIO().DeltaTime * 3.0f, 1.0f);
     
-    float contentW = 400.0f;
-    float startX = (ws.x - contentW) * 0.5f;
+    // Background
+    dl->AddRectFilled(ImVec2(0, 0), ws, IM_COL32(10, 10, 15, 255));
+    
+    // Sidebar
+    float sidebarW = 180.0f;
+    dl->AddRectFilled(ImVec2(0, 0), ImVec2(sidebarW, ws.y), IM_COL32(15, 15, 22, 255));
+    dl->AddLine(ImVec2(sidebarW, 0), ImVec2(sidebarW, ws.y), IM_COL32(40, 40, 60, 255));
     
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ws);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     
     if (ImGui::Begin("##main", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove)) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, g_fadeAlpha);
         
-        // Header
+        // ===== SIDEBAR =====
+        // Logo
         ImGui::SetCursorPos(ImVec2(20, 20));
-        ImGui::TextColored(theme::textSecondary, "Welcome,");
-        ImGui::SetCursorPos(ImVec2(20, 38));
+        dl->AddCircleFilled(ImVec2(40, 40), 18, theme::gradientA, 24);
+        ImGui::SetCursorPos(ImVec2(65, 28));
+        ImGui::TextColored(theme::text, "CS-LEGIT");
+        
+        // User
+        ImGui::SetCursorPos(ImVec2(15, 70));
+        dl->AddRectFilled(ImVec2(10, 65), ImVec2(sidebarW - 10, 105), IM_COL32(25, 25, 35, 255), 8.0f);
+        ImGui::SetCursorPos(ImVec2(20, 73));
+        ImGui::TextColored(theme::textSec, "Welcome,");
+        ImGui::SetCursorPos(ImVec2(20, 88));
         ImGui::TextColored(theme::text, "%s", g_displayName.c_str());
         
+        // Games list
+        ImGui::SetCursorPos(ImVec2(15, 120));
+        ImGui::TextColored(theme::textDim, "GAMES");
+        
+        float gameY = 140;
+        for (int i = 0; i < (int)g_games.size(); i++) {
+            const auto& game = g_games[i];
+            bool selected = (i == g_selectedGame);
+            
+            ImVec2 btnPos(10, gameY);
+            ImVec2 btnSize(sidebarW - 20, 50);
+            
+            // Button background
+            ImU32 bgColor = selected ? IM_COL32(140, 90, 245, 40) : IM_COL32(0, 0, 0, 0);
+            if (!selected) {
+                ImVec2 mousePos = ImGui::GetMousePos();
+                if (mousePos.x >= btnPos.x && mousePos.x <= btnPos.x + btnSize.x &&
+                    mousePos.y >= btnPos.y && mousePos.y <= btnPos.y + btnSize.y) {
+                    bgColor = IM_COL32(40, 40, 55, 255);
+                }
+            }
+            
+            dl->AddRectFilled(btnPos, ImVec2(btnPos.x + btnSize.x, btnPos.y + btnSize.y), bgColor, 8.0f);
+            
+            if (selected) {
+                dl->AddRectFilled(ImVec2(0, btnPos.y), ImVec2(3, btnPos.y + btnSize.y), theme::gradientA);
+            }
+            
+            // Icon
+            dl->AddCircleFilled(ImVec2(btnPos.x + 22, btnPos.y + 25), 14, 
+                game.available ? theme::gradientA : IM_COL32(60, 60, 80, 255), 20);
+            ImVec2 iconSize = ImGui::CalcTextSize(game.icon.c_str());
+            dl->AddText(ImVec2(btnPos.x + 22 - iconSize.x * 0.5f, btnPos.y + 25 - iconSize.y * 0.5f),
+                IM_COL32(255, 255, 255, game.available ? 255 : 150), game.icon.c_str());
+            
+            // Name
+            dl->AddText(ImVec2(btnPos.x + 45, btnPos.y + 10), 
+                IM_COL32(255, 255, 255, game.available ? 255 : 120), game.name.c_str());
+            
+            // Status
+            const char* status = game.hasLicense 
+                ? (game.daysRemaining < 0 ? "Lifetime" : "Active")
+                : (game.available ? "No license" : "Coming soon");
+            ImU32 statusColor = game.hasLicense 
+                ? IM_COL32(50, 220, 120, 255) 
+                : (game.available ? IM_COL32(255, 180, 50, 255) : IM_COL32(100, 100, 120, 255));
+            dl->AddText(ImVec2(btnPos.x + 45, btnPos.y + 28), statusColor, status);
+            
+            // Click handler
+            ImGui::SetCursorPos(btnPos);
+            ImGui::InvisibleButton(("game" + std::to_string(i)).c_str(), btnSize);
+            if (ImGui::IsItemClicked()) {
+                g_selectedGame = i;
+                g_errorMsg = "";
+                g_successMsg = "";
+            }
+            
+            gameY += 55;
+        }
+        
         // Logout button
-        ImGui::SetCursorPos(ImVec2(ws.x - 80, 25));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.15f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.2f, 0.2f, 1.0f));
+        ImGui::SetCursorPos(ImVec2(10, ws.y - 50));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.15f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.15f, 0.15f, 1.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
-        if (ImGui::Button("Logout", ImVec2(60, 30))) {
+        if (ImGui::Button("Logout", ImVec2(sidebarW - 20, 36))) {
             DoLogout();
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(2);
             ImGui::PopStyleVar();
             ImGui::End();
+            ImGui::PopStyleVar();
             ImGui::PopStyleColor();
             return;
         }
         ImGui::PopStyleVar();
         ImGui::PopStyleColor(2);
         
-        // License Status Card
-        float cardY = 75;
-        ImVec2 cardPos(startX, cardY);
-        ImVec2 cardSize(contentW, 80);
+        // ===== CONTENT AREA =====
+        float contentX = sidebarW + 30;
+        float contentW = ws.x - sidebarW - 60;
         
-        dl->AddRectFilled(cardPos, ImVec2(cardPos.x + cardSize.x, cardPos.y + cardSize.y), 
-            IM_COL32(20, 20, 32, 240), 12.0f);
-        dl->AddRect(cardPos, ImVec2(cardPos.x + cardSize.x, cardPos.y + cardSize.y), 
-            IM_COL32(60, 50, 90, 150), 12.0f);
+        GameInfo& game = g_games[g_selectedGame];
         
-        ImGui::SetCursorPos(ImVec2(cardPos.x + 16, cardPos.y + 14));
-        ImGui::TextColored(theme::textSecondary, "License Status");
+        // Header
+        ImGui::SetCursorPos(ImVec2(contentX, 25));
+        ImGui::TextColored(theme::text, "%s", game.name.c_str());
+        ImGui::SetCursorPos(ImVec2(contentX, 45));
+        ImGui::TextColored(theme::textDim, "External Cheat v%s", game.version.c_str());
         
-        ImGui::SetCursorPos(ImVec2(cardPos.x + 16, cardPos.y + 38));
-        if (g_hasValidLicense) {
+        // License card
+        ImVec2 licCardPos(contentX, 80);
+        ImVec2 licCardSize(contentW, 70);
+        dl->AddRectFilled(licCardPos, ImVec2(licCardPos.x + licCardSize.x, licCardPos.y + licCardSize.y),
+            IM_COL32(20, 20, 30, 255), 12.0f);
+        
+        ImGui::SetCursorPos(ImVec2(licCardPos.x + 16, licCardPos.y + 12));
+        ImGui::TextColored(theme::textSec, "License Status");
+        
+        ImGui::SetCursorPos(ImVec2(licCardPos.x + 16, licCardPos.y + 35));
+        if (game.hasLicense) {
             ImGui::TextColored(theme::success, "ACTIVE");
             ImGui::SameLine();
-            if (g_daysRemaining < 0) {
-                ImGui::TextColored(theme::textSecondary, "- Lifetime");
+            if (game.daysRemaining < 0) {
+                ImGui::TextColored(theme::textSec, "- Lifetime");
             } else {
-                ImGui::TextColored(theme::textSecondary, "- %d days remaining", g_daysRemaining);
+                ImGui::TextColored(theme::textSec, "- %d days remaining", game.daysRemaining);
             }
         } else {
             ImGui::TextColored(theme::error, "NO LICENSE");
         }
         
-        // HWID Status
-        ImGui::SetCursorPos(ImVec2(cardPos.x + cardSize.x - 120, cardPos.y + 38));
-        ImGui::TextColored(theme::textDim, "HWID: %s", g_hwidBound ? "Bound" : "Not bound");
+        // Activate license section (if no license)
+        float nextY = licCardPos.y + licCardSize.y + 15;
         
-        // Activate License Section (if no license)
-        if (!g_hasValidLicense) {
-            float actY = cardY + cardSize.y + 15;
-            ImVec2 actPos(startX, actY);
-            ImVec2 actSize(contentW, 100);
+        if (!game.hasLicense && game.available) {
+            ImVec2 actPos(contentX, nextY);
+            ImVec2 actSize(contentW, 80);
+            dl->AddRectFilled(actPos, ImVec2(actPos.x + actSize.x, actPos.y + actSize.y),
+                IM_COL32(25, 20, 35, 255), 12.0f);
             
-            dl->AddRectFilled(actPos, ImVec2(actPos.x + actSize.x, actPos.y + actSize.y), 
-                IM_COL32(25, 20, 35, 240), 12.0f);
-            dl->AddRect(actPos, ImVec2(actPos.x + actSize.x, actPos.y + actSize.y), 
-                IM_COL32(80, 60, 120, 150), 12.0f);
-            
-            ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 14));
+            ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 12));
             ImGui::TextColored(theme::accent, "Activate License");
             
-            ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 40));
+            ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 38));
             ImGui::SetNextItemWidth(actSize.x - 130);
-            StyledInput("##actkey", g_activateLicenseKey, sizeof(g_activateLicenseKey));
+            StyledInput("##actkey", g_activateKey, sizeof(g_activateKey));
             
             ImGui::SameLine();
-            if (StyledButton("Activate", ImVec2(90, 36), !g_isLoading)) {
-                ActivateLicense();
+            if (StyledButton("Activate", ImVec2(90, 34), !g_isLoading)) {
+                ActivateLicense(game.id);
             }
+            
+            nextY = actPos.y + actSize.y + 15;
         }
         
-        // Game Card
-        float gameY = g_hasValidLicense ? (cardY + cardSize.y + 20) : (cardY + cardSize.y + 130);
-        ImVec2 gamePos(startX, gameY);
-        ImVec2 gameSize(contentW, 200);
-        
-        dl->AddRectFilled(gamePos, ImVec2(gamePos.x + gameSize.x, gamePos.y + gameSize.y), 
-            IM_COL32(18, 18, 28, 240), 14.0f);
-        dl->AddRect(gamePos, ImVec2(gamePos.x + gameSize.x, gamePos.y + gameSize.y), 
-            IM_COL32(60, 50, 100, 150), 14.0f);
-        
-        // Game banner
-        ImVec2 bannerPos(gamePos.x + 14, gamePos.y + 14);
-        ImVec2 bannerSize(gameSize.x - 28, 70);
-        DrawGradientRect(dl, bannerPos, bannerSize, theme::gradientStart, theme::gradientEnd);
-        dl->AddRect(bannerPos, ImVec2(bannerPos.x + bannerSize.x, bannerPos.y + bannerSize.y), 
-            IM_COL32(255, 255, 255, 30), 10.0f);
-        
-        const char* gameTitle = "COUNTER-STRIKE 2";
-        ImVec2 gtSize = ImGui::CalcTextSize(gameTitle);
-        dl->AddText(ImVec2(bannerPos.x + (bannerSize.x - gtSize.x) * 0.5f, bannerPos.y + 18), 
-            IM_COL32(255, 255, 255, 255), gameTitle);
-        
-        const char* gameVer = "External v" CHEAT_VERSION;
-        ImVec2 gvSize = ImGui::CalcTextSize(gameVer);
-        dl->AddText(ImVec2(bannerPos.x + (bannerSize.x - gvSize.x) * 0.5f, bannerPos.y + 42), 
-            IM_COL32(255, 255, 255, 180), gameVer);
-        
         // Features
-        ImGui::SetCursorPos(ImVec2(gamePos.x + 16, gamePos.y + 100));
-        ImGui::TextColored(theme::textSecondary, "Features:");
+        ImGui::SetCursorPos(ImVec2(contentX, nextY));
+        ImGui::TextColored(theme::textDim, "FEATURES");
         
-        ImGui::SetCursorPos(ImVec2(gamePos.x + 90, gamePos.y + 100));
+        nextY += 25;
+        ImVec2 featPos(contentX, nextY);
+        dl->AddRectFilled(featPos, ImVec2(featPos.x + contentW, featPos.y + 60), 
+            IM_COL32(20, 20, 30, 255), 12.0f);
+        
+        ImGui::SetCursorPos(ImVec2(featPos.x + 20, featPos.y + 20));
         ImGui::TextColored(theme::success, "ESP");
-        ImGui::SameLine();
-        ImGui::TextColored(theme::textDim, "|");
-        ImGui::SameLine();
+        ImGui::SameLine(0, 30);
         ImGui::TextColored(theme::success, "MISC");
         
+        if (!game.available) {
+            ImGui::SameLine(0, 30);
+            ImGui::TextColored(theme::textDim, "(Coming Soon)");
+        }
+        
         // Launch button
-        ImGui::SetCursorPos(ImVec2(gamePos.x + 14, gamePos.y + 140));
+        nextY += 80;
+        ImGui::SetCursorPos(ImVec2(contentX, nextY));
         
         if (g_isDownloading) {
-            // Progress bar
-            float barW = gameSize.x - 28;
-            ImVec2 barPos2(gamePos.x + 14, gamePos.y + 150);
-            dl->AddRectFilled(barPos2, ImVec2(barPos2.x + barW, barPos2.y + 36), 
+            ImVec2 barPos(contentX, nextY + 5);
+            dl->AddRectFilled(barPos, ImVec2(barPos.x + contentW, barPos.y + 40),
                 IM_COL32(30, 30, 45, 255), 10.0f);
-            dl->AddRectFilled(barPos2, ImVec2(barPos2.x + barW * g_downloadProgress, barPos2.y + 36), 
-                theme::gradientStart, 10.0f);
+            dl->AddRectFilled(barPos, ImVec2(barPos.x + contentW * g_downloadProgress, barPos.y + 40),
+                theme::gradientA, 10.0f);
             
             char progText[32];
             sprintf_s(progText, "%.0f%%", g_downloadProgress * 100.0f);
             ImVec2 ptSize = ImGui::CalcTextSize(progText);
-            dl->AddText(ImVec2(barPos2.x + (barW - ptSize.x) * 0.5f, barPos2.y + 8), 
+            dl->AddText(ImVec2(barPos.x + (contentW - ptSize.x) * 0.5f, barPos.y + 10),
                 IM_COL32(255, 255, 255, 255), progText);
         } else {
-            bool canLaunch = g_hasValidLicense && !g_cheatRunning;
-            if (StyledButton(g_cheatRunning ? "  RUNNING  " : "  LAUNCH  ", 
-                ImVec2(gameSize.x - 28, 46), canLaunch)) {
-                LaunchCheat();
+            bool canLaunch = game.hasLicense && game.available && !g_cheatRunning;
+            std::string btnLabel = g_cheatRunning ? "  RUNNING  " : "  LAUNCH  ";
+            if (StyledButton(btnLabel.c_str(), ImVec2(contentW, 50), canLaunch)) {
+                LaunchGame(g_selectedGame);
             }
         }
         
         // Messages
-        float msgY = gameY + gameSize.y + 15;
+        nextY += 65;
         if (!g_errorMsg.empty()) {
-            float ew = ImGui::CalcTextSize(g_errorMsg.c_str()).x;
-            ImGui::SetCursorPos(ImVec2((ws.x - ew) * 0.5f, msgY));
+            ImGui::SetCursorPos(ImVec2(contentX, nextY));
             ImGui::TextColored(theme::error, "%s", g_errorMsg.c_str());
         }
         if (!g_successMsg.empty()) {
-            float sw = ImGui::CalcTextSize(g_successMsg.c_str()).x;
-            ImGui::SetCursorPos(ImVec2((ws.x - sw) * 0.5f, msgY));
+            ImGui::SetCursorPos(ImVec2(contentX, nextY));
             ImGui::TextColored(theme::success, "%s", g_successMsg.c_str());
         }
         
         // Footer
-        ImGui::SetCursorPos(ImVec2(0, ws.y - 30));
-        float fw = ImGui::CalcTextSize("CS-Legit v" LAUNCHER_VERSION).x;
-        ImGui::SetCursorPosX((ws.x - fw) * 0.5f);
+        ImGui::SetCursorPos(ImVec2(contentX, ws.y - 30));
         ImGui::TextColored(theme::textDim, "CS-Legit v" LAUNCHER_VERSION);
         
         ImGui::PopStyleVar();
     }
     ImGui::End();
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 }
 
@@ -998,40 +1022,34 @@ void RenderMain() {
 // ============================================
 void SetupStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 12.0f;
+    style.WindowRounding = 0;
     style.FrameRounding = 8.0f;
-    style.WindowPadding = ImVec2(20, 20);
+    style.WindowPadding = ImVec2(0, 0);
     style.FramePadding = ImVec2(12, 10);
     style.ItemSpacing = ImVec2(10, 8);
     
     ImVec4* c = style.Colors;
-    c[ImGuiCol_WindowBg] = theme::background;
+    c[ImGuiCol_WindowBg] = theme::bg;
     c[ImGuiCol_FrameBg] = theme::surface;
     c[ImGuiCol_FrameBgHovered] = theme::surfaceHover;
     c[ImGuiCol_Button] = theme::accent;
     c[ImGuiCol_ButtonHovered] = theme::accentHover;
     c[ImGuiCol_Text] = theme::text;
-    c[ImGuiCol_TextDisabled] = theme::textDim;
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, 
-        GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, 
-        L"CS-Legit", nullptr };
+        GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"CSLegit", nullptr };
     RegisterClassExW(&wc);
     
-    g_hwnd = CreateWindowExW(
-        WS_EX_TOPMOST,
-        wc.lpszClassName, L"CS-LEGIT",
+    g_hwnd = CreateWindowExW(WS_EX_TOPMOST, wc.lpszClassName, L"CS-LEGIT",
         WS_POPUP,
         (GetSystemMetrics(SM_CXSCREEN) - WINDOW_WIDTH) / 2,
         (GetSystemMetrics(SM_CYSCREEN) - WINDOW_HEIGHT) / 2,
-        WINDOW_WIDTH, WINDOW_HEIGHT,
-        nullptr, nullptr, wc.hInstance, nullptr
-    );
+        WINDOW_WIDTH, WINDOW_HEIGHT, nullptr, nullptr, wc.hInstance, nullptr);
     
-    DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
-    DwmSetWindowAttribute(g_hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &preference, sizeof(preference));
+    DWM_WINDOW_CORNER_PREFERENCE pref = DWMWCP_ROUND;
+    DwmSetWindowAttribute(g_hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &pref, sizeof(pref));
     
     if (!CreateDeviceD3D(g_hwnd)) {
         CleanupDeviceD3D();
@@ -1046,8 +1064,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
-    
-    io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 17.0f);
+    io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 16.0f);
     
     ImGui_ImplWin32_Init(g_hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
@@ -1100,19 +1117,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     CleanupDeviceD3D();
     DestroyWindow(g_hwnd);
     UnregisterClassW(wc.lpszClassName, wc.hInstance);
-    
     return 0;
 }
 
 // ============================================
-// DirectX Implementation
+// DirectX
 // ============================================
 bool CreateDeviceD3D(HWND hWnd) {
     DXGI_SWAP_CHAIN_DESC sd = {};
     sd.BufferCount = 2;
     sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    sd.BufferDesc.RefreshRate.Numerator = 60;
-    sd.BufferDesc.RefreshRate.Denominator = 1;
+    sd.BufferDesc.RefreshRate = {60, 1};
     sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
     sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     sd.OutputWindow = hWnd;
@@ -1120,13 +1135,12 @@ bool CreateDeviceD3D(HWND hWnd) {
     sd.Windowed = TRUE;
     sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
     
+    D3D_FEATURE_LEVEL levels[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
     D3D_FEATURE_LEVEL featureLevel;
-    const D3D_FEATURE_LEVEL levels[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
     
-    if (D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 
-        0, levels, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, 
-        &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext) != S_OK)
-        return false;
+    if (D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, 
+        levels, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, 
+        &featureLevel, &g_pd3dDeviceContext) != S_OK) return false;
     
     CreateRenderTarget();
     return true;
@@ -1151,8 +1165,7 @@ void CleanupRenderTarget() {
 }
 
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
-        return true;
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) return true;
     
     switch (msg) {
         case WM_SIZE:
@@ -1165,7 +1178,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_NCHITTEST: {
             POINT pt = { LOWORD(lParam), HIWORD(lParam) };
             ScreenToClient(hWnd, &pt);
-            if (pt.y < 60) return HTCAPTION;
+            if (pt.y < 50 && pt.x > 180) return HTCAPTION; // Drag area
             break;
         }
         case WM_KEYDOWN:
