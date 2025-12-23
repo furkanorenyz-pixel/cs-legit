@@ -11,6 +11,7 @@
 #include <shellapi.h>
 #include <ShlObj.h>
 #include <WinInet.h>
+#include <winhttp.h>
 #include <string>
 #include <filesystem>
 #include <random>
@@ -25,6 +26,7 @@
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "winhttp.lib")
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
