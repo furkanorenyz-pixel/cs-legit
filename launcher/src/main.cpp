@@ -45,7 +45,7 @@ bool g_bypassVM = false; // Set to true for development
 // Configuration
 // ============================================
 #define PROJECT_NAME "Single-Project"
-#define LAUNCHER_VERSION "1.0.0"
+#define LAUNCHER_VERSION "1.0.2"
 #define WINDOW_WIDTH 700
 #define WINDOW_HEIGHT 500
 
@@ -70,7 +70,7 @@ struct GameInfo {
 std::vector<GameInfo> g_games = {
     {"cs2", "Counter-Strike 2", "CS", "cs2.exe", "ESP (Box, Health, Name, Distance)", false, 0, "1.0.0", true},
     {"dayz", "DayZ", "DZ", "DayZ_x64.exe", "In development", false, 0, "---", false},
-    {"rust", "Rust", "RS", "RustClient.exe", "In development", false, 0, "---", false},
+    {"rust", "Rust", "Rust", "RustClient.exe", "In development", false, 0, "---", false},
     {"apex", "Apex Legends", "AP", "r5apex.exe", "In development", false, 0, "---", false}
 };
 
@@ -854,26 +854,40 @@ void DrawWindowControls(ImDrawList* dl, ImVec2 ws) {
     ImVec2 minBtnSize(25, 25);
     
     ImGui::SetCursorPos(minBtn);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.35f, 1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-    if (ImGui::Button("_", minBtnSize)) {
+    bool minHovered = false;
+    ImVec2 mousePos = ImGui::GetMousePos();
+    if (mousePos.x >= minBtn.x && mousePos.x <= minBtn.x + minBtnSize.x &&
+        mousePos.y >= minBtn.y && mousePos.y <= minBtn.y + minBtnSize.y) minHovered = true;
+        
+    dl->AddRectFilled(minBtn, ImVec2(minBtn.x + minBtnSize.x, minBtn.y + minBtnSize.y), 
+        minHovered ? IM_COL32(80, 80, 100, 255) : IM_COL32(50, 50, 65, 255), 6.0f);
+        
+    ImVec2 minTextSize = ImGui::CalcTextSize("_");
+    dl->AddText(ImVec2(minBtn.x + (minBtnSize.x - minTextSize.x) * 0.5f, minBtn.y + (minBtnSize.y - minTextSize.y) * 0.5f - 2), 
+        IM_COL32(255, 255, 255, 255), "_");
+        
+    if (ImGui::InvisibleButton("##min_ctrl", minBtnSize)) {
         ShowWindow(g_hwnd, SW_MINIMIZE);
     }
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
     
     // Close button
     ImVec2 closeBtn(ws.x - 38, 10);
+    
     ImGui::SetCursorPos(closeBtn);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.15f, 0.15f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-    if (ImGui::Button("X", minBtnSize)) {
+    bool closeHovered = false;
+    if (mousePos.x >= closeBtn.x && mousePos.x <= closeBtn.x + minBtnSize.x &&
+        mousePos.y >= closeBtn.y && mousePos.y <= closeBtn.y + minBtnSize.y) closeHovered = true;
+        
+    dl->AddRectFilled(closeBtn, ImVec2(closeBtn.x + minBtnSize.x, closeBtn.y + minBtnSize.y), 
+        closeHovered ? IM_COL32(200, 60, 60, 255) : IM_COL32(140, 40, 40, 255), 6.0f);
+        
+    ImVec2 closeTextSize = ImGui::CalcTextSize("X");
+    dl->AddText(ImVec2(closeBtn.x + (minBtnSize.x - closeTextSize.x) * 0.5f, closeBtn.y + (minBtnSize.y - closeTextSize.y) * 0.5f), 
+        IM_COL32(255, 255, 255, 255), "X");
+        
+    if (ImGui::InvisibleButton("##close_ctrl", minBtnSize)) {
         PostQuitMessage(0);
     }
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
 }
 
 // ============================================
@@ -940,10 +954,10 @@ void RenderLogin() {
         // Window controls
         DrawWindowControls(dl, ws);
         
-        // Logo + Project name
-        dl->AddCircleFilled(ImVec2(ws.x * 0.5f, 80), 32.0f, theme::gradientA, 32);
+        // Logo + Project name (Higher up)
+        dl->AddCircleFilled(ImVec2(ws.x * 0.5f, 70), 32.0f, theme::gradientA, 32);
         
-        ImGui::SetCursorPos(ImVec2(0, 125));
+        ImGui::SetCursorPos(ImVec2(0, 115));
         float tw = ImGui::CalcTextSize(PROJECT_NAME).x;
         ImGui::SetCursorPosX((ws.x - tw) * 0.5f);
         ImGui::TextColored(theme::text, PROJECT_NAME);
@@ -951,16 +965,16 @@ void RenderLogin() {
         ImGui::SetCursorPosX((ws.x - ImGui::CalcTextSize("Sign in to continue").x) * 0.5f);
         ImGui::TextColored(theme::textDim, "Sign in to continue");
         
-        ImGui::Dummy(ImVec2(0, 20));
+        ImGui::Dummy(ImVec2(0, 15));
         
-        // Inputs
+        // Inputs (Reduced spacing)
         ImGui::SetCursorPosX(x);
         ImGui::TextColored(theme::textSec, "Username");
         ImGui::SetCursorPosX(x);
         ImGui::SetNextItemWidth(w);
         StyledInput("##user", g_username, sizeof(g_username));
         
-        ImGui::Dummy(ImVec2(0, 8));
+        ImGui::Dummy(ImVec2(0, 6));
         
         ImGui::SetCursorPosX(x);
         ImGui::TextColored(theme::textSec, "Password");
@@ -969,11 +983,11 @@ void RenderLogin() {
         StyledInput("##pass", g_password, sizeof(g_password), true);
         
         // Remember me
-        ImGui::Dummy(ImVec2(0, 8));
+        ImGui::Dummy(ImVec2(0, 6));
         ImGui::SetCursorPosX(x);
         ImGui::Checkbox("Remember me", &g_rememberLogin);
         
-        ImGui::Dummy(ImVec2(0, 15));
+        ImGui::Dummy(ImVec2(0, 12));
         
         // Login button
         ImGui::SetCursorPosX(x);
@@ -981,26 +995,8 @@ void RenderLogin() {
             DoLogin();
         }
         
-        // Error/success messages
-        if (!g_errorMsg.empty()) {
-            ImGui::Dummy(ImVec2(0, 8));
-            ImGui::SetCursorPosX((ws.x - ImGui::CalcTextSize(g_errorMsg.c_str()).x) * 0.5f);
-            ImGui::TextColored(theme::error, "%s", g_errorMsg.c_str());
-        }
-        if (!g_successMsg.empty()) {
-            ImGui::Dummy(ImVec2(0, 8));
-            ImGui::SetCursorPosX((ws.x - ImGui::CalcTextSize(g_successMsg.c_str()).x) * 0.5f);
-            ImGui::TextColored(theme::success, "%s", g_successMsg.c_str());
-        }
-        
-        // Version at bottom
-        ImGui::SetCursorPos(ImVec2(0, ws.y - 25));
-        std::string verText = "v" LAUNCHER_VERSION;
-        ImGui::SetCursorPosX((ws.x - ImGui::CalcTextSize(verText.c_str()).x) * 0.5f);
-        ImGui::TextColored(theme::textDim, "%s", verText.c_str());
-        
-        // Register link above version
-        ImGui::SetCursorPos(ImVec2(0, ws.y - 50));
+        // Register link (centered below button with spacing)
+        ImGui::Dummy(ImVec2(0, 12));
         std::string regText = "No account? Register";
         float regWidth = ImGui::CalcTextSize(regText.c_str()).x;
         ImGui::SetCursorPosX((ws.x - regWidth) * 0.5f);
@@ -1015,6 +1011,24 @@ void RenderLogin() {
             g_successMsg = "";
         }
         ImGui::PopStyleColor(2);
+        
+        // Version (absolute bottom)
+        std::string verText = "v" LAUNCHER_VERSION;
+        ImVec2 verSize = ImGui::CalcTextSize(verText.c_str());
+        ImGui::SetCursorPos(ImVec2((ws.x - verSize.x) * 0.5f, ws.y - 25));
+        ImGui::TextColored(theme::textDim, "%s", verText.c_str());
+        
+        // Error/success messages (overlay)
+        if (!g_errorMsg.empty()) {
+            ImVec2 msgSize = ImGui::CalcTextSize(g_errorMsg.c_str());
+            ImGui::SetCursorPos(ImVec2((ws.x - msgSize.x) * 0.5f, 380));
+            ImGui::TextColored(theme::error, "%s", g_errorMsg.c_str());
+        }
+        if (!g_successMsg.empty()) {
+            ImVec2 msgSize = ImGui::CalcTextSize(g_successMsg.c_str());
+            ImGui::SetCursorPos(ImVec2((ws.x - msgSize.x) * 0.5f, 380));
+            ImGui::TextColored(theme::success, "%s", g_successMsg.c_str());
+        }
         
         ImGui::PopStyleVar();
     }
@@ -1304,7 +1318,6 @@ void RenderMain() {
         float contentW = ws.x - sidebarW - 50;
         
         GameInfo& game = g_games[g_selectedGame];
-        // pulse already defined above
         
         // ===== TOP BAR =====
         // Gradient header background
@@ -1326,34 +1339,58 @@ void RenderMain() {
         }
         dl->AddLine(ImVec2(sidebarW, 75), ImVec2(ws.x, 75), IM_COL32(60, 50, 90, 100));
         
-        // Window controls (top right)
+        // Window controls (top right) - Manually drawn for perfect centering
         float btnSize = 26.0f;
         float btnY = 10.0f;
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 13.0f);
         
         // Refresh
-        ImGui::SetCursorPos(ImVec2(ws.x - 110, btnY));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.22f, 0.18f, 0.9f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.40f, 0.25f, 1.0f));
-        if (ImGui::Button("@##ref", ImVec2(btnSize, btnSize))) { RefreshData(); FetchGameStatus(); }
+        ImVec2 refBtn(ws.x - 110, btnY);
+        bool refHovered = false;
+        if (mousePos.x >= refBtn.x && mousePos.x <= refBtn.x + btnSize &&
+            mousePos.y >= refBtn.y && mousePos.y <= refBtn.y + btnSize) refHovered = true;
+            
+        dl->AddRectFilled(refBtn, ImVec2(refBtn.x + btnSize, refBtn.y + btnSize), 
+            refHovered ? IM_COL32(60, 90, 60, 255) : IM_COL32(45, 55, 45, 240), 13.0f);
+            
+        ImVec2 refTextSize = ImGui::CalcTextSize("@");
+        dl->AddText(ImVec2(refBtn.x + (btnSize - refTextSize.x) * 0.5f, refBtn.y + (btnSize - refTextSize.y) * 0.5f - 1), 
+            IM_COL32(255, 255, 255, 255), "@");
+            
+        ImGui::SetCursorPos(refBtn);
+        if (ImGui::InvisibleButton("##ref", ImVec2(btnSize, btnSize))) { RefreshData(); FetchGameStatus(); }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Refresh");
-        ImGui::PopStyleColor(2);
         
         // Minimize
-        ImGui::SetCursorPos(ImVec2(ws.x - 78, btnY));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.22f, 0.28f, 0.9f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.35f, 0.45f, 1.0f));
-        if (ImGui::Button("_##min", ImVec2(btnSize, btnSize))) { ShowWindow(g_hwnd, SW_MINIMIZE); }
-        ImGui::PopStyleColor(2);
+        ImVec2 minBtn(ws.x - 78, btnY);
+        bool minHovered = false;
+        if (mousePos.x >= minBtn.x && mousePos.x <= minBtn.x + btnSize &&
+            mousePos.y >= minBtn.y && mousePos.y <= minBtn.y + btnSize) minHovered = true;
+            
+        dl->AddRectFilled(minBtn, ImVec2(minBtn.x + btnSize, minBtn.y + btnSize), 
+            minHovered ? IM_COL32(80, 80, 110, 255) : IM_COL32(55, 55, 70, 240), 13.0f);
+            
+        ImVec2 minTextSize = ImGui::CalcTextSize("_");
+        dl->AddText(ImVec2(minBtn.x + (btnSize - minTextSize.x) * 0.5f, minBtn.y + (btnSize - minTextSize.y) * 0.5f - 2), 
+            IM_COL32(255, 255, 255, 255), "_");
+            
+        ImGui::SetCursorPos(minBtn);
+        if (ImGui::InvisibleButton("##min", ImVec2(btnSize, btnSize))) { ShowWindow(g_hwnd, SW_MINIMIZE); }
         
         // Close
-        ImGui::SetCursorPos(ImVec2(ws.x - 46, btnY));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.18f, 0.18f, 0.9f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.25f, 0.25f, 1.0f));
-        if (ImGui::Button("X##cls", ImVec2(btnSize, btnSize))) { PostQuitMessage(0); }
-        ImGui::PopStyleColor(2);
-        
-        ImGui::PopStyleVar();
+        ImVec2 clsBtn(ws.x - 46, btnY);
+        bool clsHovered = false;
+        if (mousePos.x >= clsBtn.x && mousePos.x <= clsBtn.x + btnSize &&
+            mousePos.y >= clsBtn.y && mousePos.y <= clsBtn.y + btnSize) clsHovered = true;
+            
+        dl->AddRectFilled(clsBtn, ImVec2(clsBtn.x + btnSize, clsBtn.y + btnSize), 
+            clsHovered ? IM_COL32(180, 60, 60, 255) : IM_COL32(115, 45, 45, 240), 13.0f);
+            
+        ImVec2 clsTextSize = ImGui::CalcTextSize("X");
+        dl->AddText(ImVec2(clsBtn.x + (btnSize - clsTextSize.x) * 0.5f, clsBtn.y + (btnSize - clsTextSize.y) * 0.5f), 
+            IM_COL32(255, 255, 255, 255), "X");
+            
+        ImGui::SetCursorPos(clsBtn);
+        if (ImGui::InvisibleButton("##cls", ImVec2(btnSize, btnSize))) { PostQuitMessage(0); }
         
         // Game icon circle with glow
         float iconX = contentX + 28;
@@ -1718,7 +1755,7 @@ void RenderMain() {
                 IM_COL32(80, 180, 255, 255), 6.0f);
             
             char progressText[32];
-            sprintf(progressText, "%.0f%%", progress * 100);
+            sprintf_s(progressText, "%.0f%%", progress * 100);
             ImVec2 textSize = ImGui::CalcTextSize(progressText);
             dl->AddText(ImVec2(barPos.x + barSize.x / 2 - textSize.x / 2, barPos.y + 2), 
                 IM_COL32(255, 255, 255, 255), progressText);
@@ -1731,9 +1768,6 @@ void RenderMain() {
     ImGui::PopStyleColor();
 }
 
-// ============================================
-// Main
-// ============================================
 void SetupStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 0;
