@@ -308,7 +308,7 @@ void FetchUserLicenses() {
 void FetchGameStatus() {
     std::thread([]() {
         try {
-            std::string response = SendRequest("GET", "/api/games/status", "");
+            std::string response = HttpRequest("GET", "/api/games/status");
             if (response.empty()) return;
             
             // Simple JSON parsing for status
@@ -347,7 +347,7 @@ void RefreshData() {
     std::thread([&]() {
         try {
             // Fetch license info
-            std::string response = SendRequest("GET", "/api/user/licenses", "");
+            std::string response = HttpRequest("GET", "/api/auth/me");
             
             // Update game licenses from response
             if (!response.empty()) {
