@@ -8,7 +8,7 @@
 
 | Secret Name | Value |
 |-------------|-------|
-| `SERVER_URL` | `http://138.124.0.8` |
+| `SERVER_URL` | `http://single-project.duckdns.org` |
 | `CI_API_KEY` | `gh-actions-secret-key-12345` |
 
 ### 2. Готово!
@@ -61,7 +61,7 @@
 
 ```bash
 # SSH на сервер
-ssh root@138.124.0.8
+ssh root@single-project.duckdns.org
 
 # Проверь файлы
 ls -la /root/cs-legit/launcher-server/storage/files/cs2/
@@ -71,7 +71,7 @@ ls -la /root/cs-legit/launcher-server/storage/files/launcher/
 Или через API:
 
 ```bash
-curl http://138.124.0.8/api/games
+curl http://single-project.duckdns.org/api/games
 ```
 
 ---
@@ -81,8 +81,8 @@ curl http://138.124.0.8/api/games
 ### ❌ "Upload failed"
 
 1. Проверь что secrets настроены
-2. Проверь что сервер доступен: `curl http://138.124.0.8/health`
-3. Проверь логи сервера: `ssh root@138.124.0.8 journalctl -u launcher -n 50`
+2. Проверь что сервер доступен: `curl http://single-project.duckdns.org/health`
+3. Проверь логи сервера: `ssh root@single-project.duckdns.org journalctl -u launcher -n 50`
 
 ### ❌ "Build failed"
 

@@ -40,7 +40,7 @@ namespace fs = std::filesystem;
 #define WINDOW_WIDTH 700
 #define WINDOW_HEIGHT 500
 
-#define SERVER_HOST "138.124.0.8"
+#define SERVER_HOST "single-project.duckdns.org"
 #define SERVER_PORT 80
 
 // ============================================

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Admin Panel - Quick Access Script for macOS
 
-SERVER="138.124.0.8"
+SERVER="single-project.duckdns.org"
 SERVER_PASS="mmE28jaX99"
 LOCAL_PORT="8080"
 

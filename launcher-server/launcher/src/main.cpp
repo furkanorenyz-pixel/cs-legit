@@ -26,7 +26,7 @@ using namespace launcher;
 // Config
 // ============================================
 
-const std::string SERVER_URL = "http://138.124.0.8";
+const std::string SERVER_URL = "http://single-project.duckdns.org";
 const std::string CHEAT_DIR = "files";
 const std::string CONFIG_FILE = "session.dat";
 const std::string VERSION = "2.0.0";

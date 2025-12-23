@@ -14,4 +14,4 @@ lsof -ti:8080 | xargs kill 2>/dev/null
 (sleep 3 && open "http://admin:SuperAdmin123@localhost:8080/panel/") &
 
 # Connect with manual password
-ssh -L 8080:127.0.0.1:80 root@138.124.0.8
+ssh -L 8080:127.0.0.1:80 root@single-project.duckdns.org

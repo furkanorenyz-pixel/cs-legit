@@ -9,7 +9,7 @@ echo "╚═══════════════════════�
 echo ""
 
 # Server details
-SERVER="138.124.0.8"
+SERVER="single-project.duckdns.org"
 PASSWORD="mmE28jaX99"
 
 # Kill existing tunnels

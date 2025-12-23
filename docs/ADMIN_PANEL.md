@@ -28,7 +28,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                     ТВОЙ КОМПЬЮТЕР                              │
 │                                                                  │
-│   ssh -L 8080:127.0.0.1:80 root@138.124.0.8                     │
+│   ssh -L 8080:127.0.0.1:80 root@single-project.duckdns.org                     │
 │                                                                  │
 │   http://localhost:8080/panel/ → Админ-панель                   │
 └─────────────────────────────────────────────────────────────────┘
@@ -40,7 +40,7 @@
 
 ```bash
 # На Windows (PowerShell/cmd):
-ssh -L 8080:127.0.0.1:80 root@138.124.0.8
+ssh -L 8080:127.0.0.1:80 root@single-project.duckdns.org
 
 # Пароль: mmE28jaX99
 ```
@@ -131,14 +131,14 @@ curl -u admin:SuperAdmin123 -X POST http://localhost:8080/api/admin/licenses \
 ### Сменить пароль HTTP Basic Auth:
 
 ```bash
-ssh root@138.124.0.8
+ssh root@single-project.duckdns.org
 htpasswd -b /etc/nginx/.htpasswd admin НОВЫЙ_ПАРОЛЬ
 ```
 
 ### Сменить пароль админа в приложении:
 
 ```bash
-ssh root@138.124.0.8
+ssh root@single-project.duckdns.org
 nano /root/cs-legit/launcher-server/backend/.env
 # Измени ADMIN_PASSWORD=...
 systemctl restart launcher
@@ -155,7 +155,7 @@ systemctl restart launcher
 echo "🔐 Подключение к админ-панели..."
 echo "После подключения открой: http://localhost:8080/panel/"
 echo ""
-ssh -L 8080:127.0.0.1:80 root@138.124.0.8
+ssh -L 8080:127.0.0.1:80 root@single-project.duckdns.org
 ```
 
 ---
@@ -168,7 +168,7 @@ ssh -L 8080:127.0.0.1:80 root@138.124.0.8
 @echo off
 echo Connecting to admin panel...
 echo Open http://localhost:8080/panel/ after connection
-ssh -L 8080:127.0.0.1:80 root@138.124.0.8
+ssh -L 8080:127.0.0.1:80 root@single-project.duckdns.org
 pause
 ```
 
@@ -180,7 +180,7 @@ pause
 
 ```bash
 # Из интернета (должно быть 403):
-curl http://138.124.0.8/panel/
+curl http://single-project.duckdns.org/panel/
 # Ответ: 403 Forbidden
 
 # Через туннель (должно работать):
