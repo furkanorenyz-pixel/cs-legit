@@ -630,5 +630,90 @@ router.post('/users/:id/revoke', (req, res) => {
     res.json({ success: true, message: 'License revoked' });
 });
 
+// ============================================
+// GAME STATUS MANAGEMENT
+// ============================================
+
+const { setGameStatus, getGameStatus } = require('../services/telegramMonitor');
+
+/**
+ * GET /api/admin/games/status
+ * Get all game statuses
+ */
+router.get('/games/status', (req, res) => {
+    const games = db.prepare('SELECT id, name FROM games WHERE is_active = 1').all();
+    
+    const statuses = games.map(game => {
+        const status = getGameStatus(game.id);
+        return {
+            id: game.id,
+            name: game.name,
+            status: status.status,
+            message: status.message,
+            updated_at: status.updated_at,
+            updated_by: status.updated_by
+        };
+    });
+    
+    res.json({ statuses });
+});
+
+/**
+ * POST /api/admin/games/:id/status
+ * Set game status (operational, updating, maintenance)
+ */
+router.post('/games/:id/status', (req, res) => {
+    const gameId = req.params.id;
+    const { status, message } = req.body;
+    
+    const validStatuses = ['operational', 'updating', 'maintenance', 'offline'];
+    if (!validStatuses.includes(status)) {
+        return res.status(400).json({ 
+            error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` 
+        });
+    }
+    
+    // Update status
+    db.prepare(`
+        CREATE TABLE IF NOT EXISTS game_status (
+            game_id TEXT PRIMARY KEY,
+            status TEXT DEFAULT 'operational',
+            message TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_by TEXT
+        )
+    `).run();
+    
+    db.prepare(`
+        INSERT OR REPLACE INTO game_status (game_id, status, message, updated_at, updated_by)
+        VALUES (?, ?, ?, datetime('now'), 'admin')
+    `).run(gameId, status, message || null);
+    
+    console.log(`[Admin] Set ${gameId} status to: ${status}`);
+    res.json({ success: true, status, message: `Status set to ${status}` });
+});
+
+/**
+ * POST /api/admin/games/:id/toggle
+ * Quick toggle between operational and updating
+ */
+router.post('/games/:id/toggle', (req, res) => {
+    const gameId = req.params.id;
+    const currentStatus = getGameStatus(gameId);
+    
+    const newStatus = currentStatus.status === 'operational' ? 'updating' : 'operational';
+    const newMessage = newStatus === 'updating' ? 
+        'Game update detected - cheat being updated' : 
+        'Cheat updated and working';
+    
+    db.prepare(`
+        INSERT OR REPLACE INTO game_status (game_id, status, message, updated_at, updated_by)
+        VALUES (?, ?, ?, datetime('now'), 'admin')
+    `).run(gameId, newStatus, newMessage);
+    
+    console.log(`[Admin] Toggled ${gameId} to: ${newStatus}`);
+    res.json({ success: true, status: newStatus, message: newMessage });
+});
+
 module.exports = router;
 

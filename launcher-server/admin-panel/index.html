@@ -823,6 +823,38 @@
                     </div>
                 </div>
                 
+                <!-- Game Status Control -->
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <h2>🎮 Game Status Control</h2>
+                    </div>
+                    <div class="card-body">
+                        <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <h3 style="margin-bottom: 8px;">Counter-Strike 2</h3>
+                                <div id="cs2StatusBadge" style="display: inline-block; padding: 6px 16px; border-radius: 20px; font-weight: 600; font-size: 14px;">
+                                    Loading...
+                                </div>
+                                <p id="cs2StatusMessage" style="color: var(--text-muted); font-size: 13px; margin-top: 8px;"></p>
+                            </div>
+                            <div style="display: flex; gap: 12px;">
+                                <button onclick="setGameStatus('cs2', 'operational')" class="btn btn-sm" style="background: var(--success); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                    ✅ WORKING
+                                </button>
+                                <button onclick="setGameStatus('cs2', 'updating')" class="btn btn-sm" style="background: var(--warning); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                    🔄 UPDATING
+                                </button>
+                                <button onclick="setGameStatus('cs2', 'maintenance')" class="btn btn-sm" style="background: var(--danger); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                    🔴 OFFLINE
+                                </button>
+                            </div>
+                        </div>
+                        <div style="margin-top: 16px; padding: 12px; background: var(--bg-input); border-radius: 8px; font-size: 13px; color: var(--text-muted);">
+                            💡 <strong>Telegram мониторинг:</strong> Бот следит за каналом @cstwoupdate. При обновлении CS2 статус автоматически сменится на "UPDATING".
+                        </div>
+                    </div>
+                </div>
+
                 <div class="quick-actions">
                     <div class="quick-action" onclick="showPage('generate')">
                         <div class="icon">🔑</div>
@@ -1135,6 +1167,59 @@
             loadUsers();
             loadLicenses();
             loadRecentActivity();
+            loadGameStatus();
+        }
+
+        // Game Status Control
+        async function loadGameStatus() {
+            try {
+                const res = await api('GET', '/api/admin/games/status');
+                if (res.statuses) {
+                    for (const game of res.statuses) {
+                        updateGameStatusUI(game.id, game.status, game.message);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load game status:', e);
+            }
+        }
+
+        function updateGameStatusUI(gameId, status, message) {
+            const badge = document.getElementById(`${gameId}StatusBadge`);
+            const msgEl = document.getElementById(`${gameId}StatusMessage`);
+            
+            if (!badge) return;
+            
+            const statusConfig = {
+                operational: { text: '✅ WORKING', bg: 'var(--success)' },
+                updating: { text: '🔄 UPDATING', bg: 'var(--warning)' },
+                maintenance: { text: '🔴 MAINTENANCE', bg: 'var(--danger)' },
+                offline: { text: '⚫ OFFLINE', bg: '#666' }
+            };
+            
+            const config = statusConfig[status] || statusConfig.operational;
+            badge.textContent = config.text;
+            badge.style.background = config.bg;
+            badge.style.color = 'white';
+            
+            if (msgEl && message) {
+                msgEl.textContent = message;
+            }
+        }
+
+        async function setGameStatus(gameId, status) {
+            const message = status === 'operational' ? 'Cheat updated and working' :
+                           status === 'updating' ? 'Game update detected - cheat being updated' :
+                           'System offline for maintenance';
+            
+            const res = await api('POST', `/api/admin/games/${gameId}/status`, { status, message });
+            
+            if (res.success) {
+                updateGameStatusUI(gameId, status, message);
+                showToast(`${gameId.toUpperCase()} status set to ${status.toUpperCase()}`, 'success');
+            } else {
+                showToast(res.error || 'Failed to update status', 'error');
+            }
         }
 
         // Page Navigation

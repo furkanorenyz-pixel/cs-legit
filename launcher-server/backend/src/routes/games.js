@@ -46,14 +46,33 @@ router.get('/status', (req, res) => {
     const gameStatuses = {};
     const processedGames = new Set();
     
+    // Create status table if not exists
+    try {
+        db.prepare(`
+            CREATE TABLE IF NOT EXISTS game_status (
+                game_id TEXT PRIMARY KEY,
+                status TEXT DEFAULT 'operational',
+                message TEXT,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_by TEXT
+            )
+        `).run();
+    } catch (e) {}
+    
     for (const game of games) {
         if (processedGames.has(game.id)) continue;
         processedGames.add(game.id);
         
-        let status = 'operational'; // operational, updating, maintenance
-        let message = 'All systems operational';
+        // Check custom status from database first
+        let customStatus = null;
+        try {
+            customStatus = db.prepare('SELECT * FROM game_status WHERE game_id = ?').get(game.id);
+        } catch (e) {}
         
-        // Check if offsets file exists and is recent
+        let status = customStatus?.status || 'operational';
+        let message = customStatus?.message || 'All systems operational';
+        
+        // Check if offsets file exists and is recent (only if no custom status set)
         const offsetFile = path.join(offsetsPath, `${game.id}.json`);
         let offsetsAge = null;
         
@@ -61,17 +80,18 @@ router.get('/status', (req, res) => {
             const stats = fs.statSync(offsetFile);
             offsetsAge = Math.floor((now - stats.mtimeMs) / (1000 * 60 * 60)); // hours
             
-            if (offsetsAge > 48) {
+            // Only auto-change to warning if status is operational
+            if (!customStatus && offsetsAge > 48) {
                 status = 'warning';
                 message = 'Offsets may need update';
             }
-        } else {
+        } else if (!customStatus) {
             status = 'maintenance';
             message = 'Offsets not available';
         }
         
         // Check if version exists
-        if (!game.latest_version) {
+        if (!customStatus && !game.latest_version) {
             status = 'maintenance';
             message = 'No version available';
         }
