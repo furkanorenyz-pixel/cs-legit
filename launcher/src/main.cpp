@@ -88,7 +88,6 @@ IDXGISwapChain* g_pSwapChain = nullptr;
 ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
 // State
-bool g_isExternal = true;
 std::string g_statusMsg = "Ready to launch";
 ImU32 g_statusColor = colors::success;
 float g_animTime = 0.0f;
@@ -157,7 +156,7 @@ void Launch() {
     if (g_isLaunching || g_isDownloading) return;
     
     std::string gameId = "cs2";
-    std::string target = g_isExternal ? XString("externa.exe") : XString("injector.exe");
+    std::string target = XString("externa.exe");  // Always external
     
     // Check if we have license
     if (!api::Client::Get().HasLicense(gameId)) {
@@ -171,13 +170,14 @@ void Launch() {
     
     if (!needsDownload) {
         // Check for updates
-        std::string currentVersion = "1.0.0"; // TODO: read from file
+        std::string currentVersion = "1.0.0"; // TODO: read from version file
         needsDownload = api::Client::Get().CheckUpdate(gameId, currentVersion);
     }
     
     if (needsDownload) {
         g_isDownloading = true;
-        g_statusMsg = XString("Downloading update...");
+        g_downloadProgress = 0.0f;
+        g_statusMsg = XString("Downloading...");
         g_statusColor = colors::accent;
         
         std::thread([target, gameId]() {
@@ -189,7 +189,7 @@ void Launch() {
             g_isDownloading = false;
             
             if (success) {
-                g_statusMsg = XString("Download complete!");
+                g_statusMsg = XString("Download complete! Click Launch again.");
                 g_statusColor = colors::success;
                 
                 // Also update offsets
@@ -209,7 +209,7 @@ void Launch() {
     }
 
     g_isLaunching = true;
-    g_statusMsg = XString("Launching...");
+    g_statusMsg = XString("Launching CS2 External...");
     g_statusColor = colors::accent;
     
     STARTUPINFOA si;
@@ -218,13 +218,13 @@ void Launch() {
     ZeroMemory(&pi, sizeof(pi));
 
     if (CreateProcessA(target.c_str(), NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-        g_statusMsg = XString("Success! Closing launcher...");
+        g_statusMsg = XString("CS2 External started!");
         g_statusColor = colors::success;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
         
         std::thread([]() {
-            Sleep(1500);
+            Sleep(2000);
             exit(0);
         }).detach();
     } else {
@@ -632,8 +632,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     RegisterClassExW(&wc);
     
     // Window size - compact and clean
-    const int WIDTH = 480;
-    const int HEIGHT = 380;
+    const int WIDTH = 420;
+    const int HEIGHT = 340;
     
     // Center on screen
     int screenW = GetSystemMetrics(SM_CXSCREEN);
@@ -779,9 +779,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         }
         
         // ========== TITLE ==========
-        const char* titleText = XString("EXTERNAL");
+        const char* titleText = XString("CS2 EXTERNAL");
         
-        ImGui::SetWindowFontScale(2.2f);
+        ImGui::SetWindowFontScale(2.0f);
         ImVec2 titleSize = ImGui::CalcTextSize(titleText);
         ImVec2 titlePos = ImVec2(winPos.x + (winSize.x - titleSize.x) / 2, winPos.y + 55);
         
@@ -805,41 +805,93 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         
         // Decorative line under title
         float lineY = titlePos.y + titleSize.y + 5;
-        float lineWidth = 80;
+        float lineWidth = 120;
         draw->AddLine(ImVec2(winPos.x + (winSize.x - lineWidth) / 2, lineY),
                      ImVec2(winPos.x + (winSize.x + lineWidth) / 2, lineY),
                      IM_COL32(147, 112, 219, 150), 2.0f);
         
-        // ========== MODE CARDS ==========
-        float cardWidth = 200;
-        float cardHeight = 120;
-        float cardSpacing = 30;
-        float cardsStartX = winPos.x + (winSize.x - cardWidth * 2 - cardSpacing) / 2;
-        float cardsY = winPos.y + 120;
+        // ========== CS2 INFO CARD ==========
+        float cardWidth = 320;
+        float cardHeight = 100;
+        float cardX = winPos.x + (winSize.x - cardWidth) / 2;
+        float cardY = winPos.y + 115;
         
-        // External card
-        ImVec2 extPos = ImVec2(cardsStartX, cardsY);
-        bool extHovered = ImGui::IsMouseHoveringRect(extPos, ImVec2(extPos.x + cardWidth, extPos.y + cardHeight));
-        ui::DrawModeCard(draw, XString("EXTERNAL"), XString("Overlay Mode"), true,
-            extPos, ImVec2(cardWidth, cardHeight), g_isExternal, extHovered);
-        if (extHovered && ImGui::IsMouseClicked(0)) g_isExternal = true;
+        // Card background
+        draw->AddRectFilled(
+            ImVec2(cardX, cardY),
+            ImVec2(cardX + cardWidth, cardY + cardHeight),
+            IM_COL32(30, 28, 45, 255), 15.0f);
+        draw->AddRect(
+            ImVec2(cardX, cardY),
+            ImVec2(cardX + cardWidth, cardY + cardHeight),
+            IM_COL32(80, 70, 120, 255), 15.0f, 0, 1.5f);
         
-        // Internal card
-        ImVec2 intPos = ImVec2(cardsStartX + cardWidth + cardSpacing, cardsY);
-        bool intHovered = ImGui::IsMouseHoveringRect(intPos, ImVec2(intPos.x + cardWidth, intPos.y + cardHeight));
-        ui::DrawModeCard(draw, XString("INTERNAL"), XString("Inject Mode"), false,
-            intPos, ImVec2(cardWidth, cardHeight), !g_isExternal, intHovered);
-        if (intHovered && ImGui::IsMouseClicked(0)) g_isExternal = false;
+        // Game icon placeholder (CS2 text)
+        ImGui::SetWindowFontScale(1.4f);
+        ImGui::SetCursorScreenPos(ImVec2(cardX + 20, cardY + 20));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.2f, 1.0f));
+        ImGui::Text("CS2");
+        ImGui::PopStyleColor();
+        ImGui::SetWindowFontScale(1.0f);
+        
+        // Game name
+        ImGui::SetCursorScreenPos(ImVec2(cardX + 75, cardY + 18));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::Text("Counter-Strike 2");
+        ImGui::PopStyleColor();
+        
+        // Mode info
+        ImGui::SetCursorScreenPos(ImVec2(cardX + 75, cardY + 40));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.7f, 1.0f));
+        ImGui::Text("External Overlay | ESP + Radar");
+        ImGui::PopStyleColor();
+        
+        // License status
+        bool hasLicense = api::Client::Get().HasLicense("cs2");
+        ImGui::SetCursorScreenPos(ImVec2(cardX + 75, cardY + 62));
+        if (hasLicense) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.9f, 0.3f, 1.0f));
+            ImGui::Text("License: ACTIVE");
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+            ImGui::Text("License: NONE");
+        }
+        ImGui::PopStyleColor();
+        
+        // Version badge on card
+        std::string verText = "v" + api::Client::Get().GetLatestVersion("cs2");
+        if (verText == "v") verText = "v1.0.0";
+        ImVec2 verSize = ImGui::CalcTextSize(verText.c_str());
+        draw->AddRectFilled(
+            ImVec2(cardX + cardWidth - verSize.x - 25, cardY + 15),
+            ImVec2(cardX + cardWidth - 10, cardY + 35),
+            IM_COL32(80, 60, 120, 255), 8.0f);
+        ImGui::SetCursorScreenPos(ImVec2(cardX + cardWidth - verSize.x - 18, cardY + 18));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.9f, 1.0f));
+        ImGui::Text("%s", verText.c_str());
+        ImGui::PopStyleColor();
         
         // ========== LAUNCH BUTTON ==========
         float buttonWidth = 280;
-        float buttonHeight = 48;  // Good ratio for pill shape
+        float buttonHeight = 48;
         float buttonX = winPos.x + (winSize.x - buttonWidth) / 2;
-        float buttonY = cardsY + cardHeight + 35;
+        float buttonY = cardY + cardHeight + 25;
         
-        if (ui::DrawPremiumButton(draw, 
-            g_isLaunching ? XString("LAUNCHING...") : XString("LAUNCH SOFTWARE"),
-            ImVec2(buttonX, buttonY), ImVec2(buttonWidth, buttonHeight), g_isLaunching)) {
+        // Determine button text based on state
+        const char* buttonText = XString("LAUNCH CS2");
+        bool buttonDisabled = g_isLaunching || g_isDownloading;
+        
+        if (g_isLaunching) {
+            buttonText = XString("LAUNCHING...");
+        } else if (g_isDownloading) {
+            buttonText = XString("DOWNLOADING...");
+        } else if (!api::Client::Get().HasLicense("cs2")) {
+            buttonText = XString("NO LICENSE");
+            buttonDisabled = true;
+        }
+        
+        if (ui::DrawPremiumButton(draw, buttonText,
+            ImVec2(buttonX, buttonY), ImVec2(buttonWidth, buttonHeight), buttonDisabled)) {
             Launch();
         }
         
