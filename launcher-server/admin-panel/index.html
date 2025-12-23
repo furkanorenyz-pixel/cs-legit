@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Panel</title>
+    <title>CS-Legit Admin Panel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -12,29 +13,31 @@
         }
         
         :root {
-            --bg-dark: #0d0d12;
-            --bg-card: #16161e;
-            --bg-hover: #1e1e2a;
-            --accent: #9370db;
-            --accent-hover: #a855f7;
-            --success: #22c55e;
+            --bg-dark: #0a0a0f;
+            --bg-sidebar: #0f0f18;
+            --bg-card: #14141f;
+            --bg-card-hover: #1a1a28;
+            --bg-input: #0d0d14;
+            --accent: #8b5cf6;
+            --accent-hover: #a78bfa;
+            --accent-glow: rgba(139, 92, 246, 0.3);
+            --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
-            --text: #f0f0f5;
-            --text-muted: #6b7280;
+            --info: #3b82f6;
+            --text: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #1e1e2e;
+            --border-light: #2a2a3e;
         }
         
         body {
-            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-family: 'Inter', system-ui, sans-serif;
             background: var(--bg-dark);
             color: var(--text);
             min-height: 100vh;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+            overflow-x: hidden;
         }
         
         /* Login Screen */
@@ -43,182 +46,341 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
+            background: 
+                radial-gradient(ellipse at 20% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 50%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+                var(--bg-dark);
         }
         
         .login-box {
             background: var(--bg-card);
-            padding: 40px;
-            border-radius: 20px;
+            padding: 50px;
+            border-radius: 24px;
             width: 100%;
-            max-width: 400px;
-            border: 1px solid #333;
+            max-width: 440px;
+            border: 1px solid var(--border);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
         
-        .login-box h1 {
+        .login-box .logo {
             text-align: center;
-            margin-bottom: 30px;
-            color: var(--accent);
+            margin-bottom: 40px;
+        }
+        
+        .login-box .logo h1 {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--info) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+        
+        .login-box .logo p {
+            color: var(--text-muted);
+            font-size: 14px;
         }
         
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
         
         .form-group label {
             display: block;
             margin-bottom: 8px;
-            color: var(--text-muted);
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
         }
         
-        .form-group input, .form-group select {
+        .form-group input, .form-group select, .form-group textarea {
             width: 100%;
-            padding: 12px 16px;
-            border: 1px solid #333;
-            border-radius: 10px;
-            background: var(--bg-dark);
+            padding: 14px 18px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--bg-input);
             color: var(--text);
-            font-size: 16px;
-        }
-        
-        .form-group input:focus, .form-group select:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-        
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
+            font-size: 15px;
             transition: all 0.2s;
         }
         
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        
+        .form-group input::placeholder {
+            color: var(--text-muted);
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
         .btn-primary {
-            background: var(--accent);
+            background: linear-gradient(135deg, var(--accent) 0%, #7c3aed 100%);
             color: white;
             width: 100%;
         }
         
         .btn-primary:hover {
-            background: var(--accent-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px var(--accent-glow);
         }
         
-        .btn-success {
-            background: var(--success);
-            color: white;
+        .btn-success { background: var(--success); color: white; }
+        .btn-warning { background: var(--warning); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-info { background: var(--info); color: white; }
+        .btn-secondary { background: var(--border-light); color: var(--text); }
+        
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 13px;
+            border-radius: 8px;
         }
         
-        .btn-danger {
-            background: var(--danger);
-            color: white;
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border-radius: 10px;
         }
         
-        .btn-small {
-            padding: 6px 12px;
-            font-size: 12px;
-        }
-        
-        /* Dashboard */
-        .dashboard {
+        /* Layout */
+        .app-container {
             display: none;
+            min-height: 100vh;
         }
         
-        .header {
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 280px;
+            height: 100vh;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            padding: 24px;
+            z-index: 100;
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
+        }
+        
+        .sidebar-logo {
+            padding: 16px 0 32px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 24px;
+        }
+        
+        .sidebar-logo h1 {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--info) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .sidebar-logo span {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: block;
+            margin-top: 4px;
+        }
+        
+        .sidebar-nav {
+            flex: 1;
+        }
+        
+        .nav-section {
+            margin-bottom: 24px;
+        }
+        
+        .nav-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 8px 12px;
+        }
+        
+        .nav-item {
+            display: flex;
             align-items: center;
-            padding: 20px 0;
-            border-bottom: 1px solid #333;
-            margin-bottom: 30px;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 4px;
         }
         
-        .header h1 {
-            color: var(--accent);
+        .nav-item:hover {
+            background: var(--bg-card);
+            color: var(--text);
         }
         
+        .nav-item.active {
+            background: linear-gradient(135deg, var(--accent) 0%, #7c3aed 100%);
+            color: white;
+        }
+        
+        .nav-item .icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+        
+        .sidebar-footer {
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: var(--bg-card);
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--info) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+        
+        .user-details h4 {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .user-details span {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            padding: 32px;
+            min-height: 100vh;
+        }
+        
+        .page-header {
+            margin-bottom: 32px;
+        }
+        
+        .page-header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .page-header p {
+            color: var(--text-muted);
+        }
+        
+        /* Stats Cards */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-bottom: 32px;
         }
         
         .stat-card {
             background: var(--bg-card);
-            padding: 20px;
-            border-radius: 15px;
-            border: 1px solid #333;
+            padding: 24px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            transition: all 0.2s;
         }
         
-        .stat-card h3 {
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+        }
+        
+        .stat-card .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 16px;
+        }
+        
+        .stat-card .stat-icon.purple { background: rgba(139, 92, 246, 0.2); }
+        .stat-card .stat-icon.blue { background: rgba(59, 130, 246, 0.2); }
+        .stat-card .stat-icon.green { background: rgba(16, 185, 129, 0.2); }
+        .stat-card .stat-icon.orange { background: rgba(245, 158, 11, 0.2); }
+        
+        .stat-card .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        
+        .stat-card .stat-label {
             color: var(--text-muted);
             font-size: 14px;
-            margin-bottom: 10px;
         }
         
-        .stat-card .value {
-            font-size: 32px;
-            font-weight: 700;
-            color: var(--accent);
-        }
-        
-        .section {
+        /* Cards */
+        .card {
             background: var(--bg-card);
-            padding: 25px;
-            border-radius: 15px;
-            border: 1px solid #333;
-            margin-bottom: 20px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            margin-bottom: 24px;
         }
         
-        .section h2 {
-            margin-bottom: 20px;
+        .card-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .card-header h2 {
+            font-size: 18px;
+            font-weight: 600;
             display: flex;
             align-items: center;
             gap: 10px;
         }
         
-        .section h2::before {
-            content: '';
-            width: 4px;
-            height: 24px;
-            background: var(--accent);
-            border-radius: 2px;
+        .card-body {
+            padding: 24px;
         }
         
-        .key-gen-form {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .generated-keys {
-            background: var(--bg-dark);
-            padding: 15px;
-            border-radius: 10px;
-            margin-top: 15px;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        
-        .key-item {
-            font-family: monospace;
-            padding: 8px;
-            background: var(--bg-hover);
-            border-radius: 5px;
-            margin-bottom: 5px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .key-item .copy-btn {
-            background: none;
-            border: none;
-            color: var(--accent);
-            cursor: pointer;
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
         }
         
         table {
@@ -227,71 +389,83 @@
         }
         
         th, td {
-            padding: 12px;
+            padding: 14px 16px;
             text-align: left;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid var(--border);
         }
         
         th {
             color: var(--text-muted);
             font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         
+        tr:hover {
+            background: var(--bg-card-hover);
+        }
+        
+        /* Badges */
         .badge {
-            padding: 4px 10px;
+            padding: 6px 12px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
         
-        .badge-success {
-            background: rgba(34, 197, 94, 0.2);
-            color: var(--success);
+        .badge-success { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+        .badge-warning { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+        .badge-danger { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+        .badge-info { background: rgba(59, 130, 246, 0.15); color: var(--info); }
+        .badge-purple { background: rgba(139, 92, 246, 0.15); color: var(--accent); }
+        
+        /* Forms */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
         }
         
-        .badge-warning {
-            background: rgba(245, 158, 11, 0.2);
-            color: var(--warning);
-        }
-        
-        .badge-danger {
-            background: rgba(239, 68, 68, 0.2);
-            color: var(--danger);
-        }
-        
-        .tabs {
+        .form-inline {
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
+            gap: 12px;
+            align-items: flex-end;
         }
         
-        .tab {
-            padding: 10px 20px;
-            background: var(--bg-dark);
-            border: 1px solid #333;
+        .form-inline .form-group {
+            margin-bottom: 0;
+            flex: 1;
+        }
+        
+        /* Key Output */
+        .keys-output {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .key-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-card);
             border-radius: 10px;
-            cursor: pointer;
-            color: var(--text-muted);
+            margin-bottom: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
         }
         
-        .tab.active {
-            background: var(--accent);
-            color: white;
-            border-color: var(--accent);
-        }
-        
-        .hidden {
-            display: none !important;
-        }
-        
-        .error {
-            color: var(--danger);
-            margin-top: 10px;
-        }
-        
-        .success-msg {
-            color: var(--success);
-            margin-top: 10px;
+        .key-item:last-child {
+            margin-bottom: 0;
         }
         
         /* Modal */
@@ -301,7 +475,8 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -311,281 +486,626 @@
         .modal-content {
             background: var(--bg-card);
             border-radius: 20px;
-            border: 1px solid #333;
+            border: 1px solid var(--border);
             width: 90%;
-            max-width: 700px;
-            max-height: 85vh;
+            max-width: 800px;
+            max-height: 90vh;
             overflow-y: auto;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
         }
         
         .modal-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px 25px;
-            border-bottom: 1px solid #333;
         }
         
         .modal-header h2 {
-            margin: 0;
-        }
-        
-        .close-btn {
-            background: none;
-            border: none;
-            color: var(--text);
-            font-size: 28px;
-            cursor: pointer;
-        }
-        
-        .modal-body {
-            padding: 25px;
-        }
-        
-        .user-info {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 15px;
-            margin-bottom: 25px;
-        }
-        
-        .info-item {
-            background: var(--bg-dark);
-            padding: 12px 15px;
-            border-radius: 10px;
-        }
-        
-        .info-item label {
-            color: var(--text-muted);
-            font-size: 12px;
-            display: block;
-            margin-bottom: 5px;
-        }
-        
-        .info-item span {
+            font-size: 20px;
             font-weight: 600;
         }
         
-        .action-buttons {
+        .modal-close {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            border: none;
+            background: var(--bg-input);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 20px;
             display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 25px;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
         }
         
-        .license-card {
-            background: var(--bg-dark);
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 10px;
+        .modal-close:hover {
+            background: var(--danger);
+        }
+        
+        .modal-body {
+            padding: 24px;
+        }
+        
+        /* User Details in Modal */
+        .user-profile {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .profile-item {
+            background: var(--bg-input);
+            padding: 16px;
+            border-radius: 12px;
+        }
+        
+        .profile-item label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        
+        .profile-item span {
+            font-weight: 600;
+            font-size: 15px;
+        }
+        
+        .action-bar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 16px;
+            background: var(--bg-input);
+            border-radius: 12px;
+            margin-bottom: 24px;
+        }
+        
+        /* License Cards in Modal */
+        .license-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 16px;
+            background: var(--bg-input);
+            border-radius: 12px;
+            margin-bottom: 12px;
         }
         
-        .license-card .game {
+        .license-info {
+            flex: 1;
+        }
+        
+        .license-info .game-name {
             font-weight: 700;
             color: var(--accent);
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+        
+        .license-info .expires {
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            background: var(--bg-input);
+            padding: 6px;
+            border-radius: 12px;
+            width: fit-content;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .tab:hover {
+            color: var(--text);
+        }
+        
+        .tab.active {
+            background: var(--accent);
+            color: white;
+        }
+        
+        /* Quick Actions */
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        
+        .quick-action {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        
+        .quick-action:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent);
+        }
+        
+        .quick-action .icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+        }
+        
+        .quick-action h3 {
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+        
+        .quick-action p {
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        
+        /* Utilities */
+        .hidden { display: none !important; }
+        .text-success { color: var(--success); }
+        .text-danger { color: var(--danger); }
+        .text-muted { color: var(--text-muted); }
+        .text-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 2000;
+        }
+        
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease;
+        }
+        
+        .toast.success { border-left: 4px solid var(--success); }
+        .toast.error { border-left: 4px solid var(--danger); }
+        .toast.info { border-left: 4px solid var(--info); }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
         }
         
         /* Responsive */
+        @media (max-width: 1200px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .quick-actions { grid-template-columns: repeat(2, 1fr); }
+        }
+        
         @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: 1fr 1fr;
-            }
-            .key-gen-form {
-                grid-template-columns: 1fr;
-            }
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .quick-actions { grid-template-columns: 1fr; }
+            .user-profile { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
     <!-- Login Screen -->
     <div id="loginScreen" class="login-screen">
         <div class="login-box">
-            <h1>🔐 Admin Panel</h1>
+            <div class="logo">
+                <h1>🎮 CS-Legit</h1>
+                <p>Admin Control Panel</p>
+            </div>
             <div class="form-group">
                 <label>Username</label>
-                <input type="text" id="loginUsername" placeholder="admin">
+                <input type="text" id="loginUsername" placeholder="Enter username">
             </div>
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" id="loginPassword" placeholder="••••••••">
+                <input type="password" id="loginPassword" placeholder="Enter password">
             </div>
-            <button class="btn btn-primary" onclick="login()">Login</button>
-            <p id="loginError" class="error"></p>
+            <button class="btn btn-primary" onclick="login()">
+                <span>🔐</span> Sign In
+            </button>
+            <p id="loginError" class="text-danger" style="margin-top: 16px; text-align: center;"></p>
         </div>
     </div>
 
-    <!-- Dashboard -->
-    <div id="dashboard" class="dashboard">
-        <div class="container">
-            <div class="header">
-                <h1>🎮 Cheat Admin Panel</h1>
-                <button class="btn btn-danger btn-small" onclick="logout()">Logout</button>
+    <!-- App Container -->
+    <div id="appContainer" class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <h1>🎮 CS-Legit</h1>
+                <span>Admin Panel v2.0</span>
             </div>
-
-            <!-- Stats -->
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <h3>👥 Users</h3>
-                    <div class="value" id="statUsers">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>🎮 Games</h3>
-                    <div class="value" id="statGames">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>🔑 Licenses</h3>
-                    <div class="value" id="statLicenses">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>📥 Downloads Today</h3>
-                    <div class="value" id="statDownloads">0</div>
-                </div>
-            </div>
-
-            <!-- Tabs -->
-            <div class="tabs">
-                <div class="tab active" onclick="showTab('keys')">🔑 License Keys</div>
-                <div class="tab" onclick="showTab('users')">👥 Users</div>
-                <div class="tab" onclick="showTab('licenses')">📋 All Licenses</div>
-            </div>
-
-            <!-- Generate Keys Section -->
-            <div id="tabKeys" class="section">
-                <h2>Generate License Keys</h2>
-                <div class="key-gen-form">
-                    <div class="form-group">
-                        <label>Game</label>
-                        <select id="keyGame">
-                            <option value="cs2">CS2</option>
-                        </select>
+            
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Main</div>
+                    <div class="nav-item active" onclick="showPage('dashboard')">
+                        <span class="icon">📊</span>
+                        <span>Dashboard</span>
                     </div>
-                    <div class="form-group">
-                        <label>Subscription</label>
-                        <select id="keyDays">
-                            <option value="">Lifetime</option>
-                            <option value="1">1 Day</option>
-                            <option value="7">1 Week</option>
-                            <option value="30">1 Month</option>
-                            <option value="90">3 Months</option>
-                            <option value="365">1 Year</option>
-                        </select>
+                    <div class="nav-item" onclick="showPage('users')">
+                        <span class="icon">👥</span>
+                        <span>Users</span>
                     </div>
-                    <div class="form-group">
-                        <label>Count</label>
-                        <input type="number" id="keyCount" value="1" min="1" max="100">
-                    </div>
-                    <div class="form-group">
-                        <label>Prefix (optional)</label>
-                        <input type="text" id="keyPrefix" placeholder="TRIAL">
+                    <div class="nav-item" onclick="showPage('licenses')">
+                        <span class="icon">🔑</span>
+                        <span>Licenses</span>
                     </div>
                 </div>
-                <button class="btn btn-success" onclick="generateKeys()">Generate Keys</button>
                 
-                <div id="generatedKeys" class="generated-keys hidden">
-                    <strong>Generated Keys:</strong>
-                    <div id="keysList"></div>
-                </div>
-            </div>
-
-            <!-- Users Section -->
-            <div id="tabUsers" class="section hidden">
-                <h2>Users Management</h2>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Username</th>
-                            <th>Status</th>
-                            <th>Active Subs</th>
-                            <th>HWID</th>
-                            <th>Last Login</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="usersTable"></tbody>
-                </table>
-            </div>
-
-            <!-- User Details Modal -->
-            <div id="userModal" class="modal hidden">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h2>👤 User Details</h2>
-                        <button class="close-btn" onclick="closeModal()">&times;</button>
+                <div class="nav-section">
+                    <div class="nav-section-title">Management</div>
+                    <div class="nav-item" onclick="showPage('generate')">
+                        <span class="icon">➕</span>
+                        <span>Generate Keys</span>
                     </div>
-                    <div id="userModalContent"></div>
+                    <div class="nav-item" onclick="showPage('versions')">
+                        <span class="icon">📦</span>
+                        <span>Versions</span>
+                    </div>
+                </div>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar">A</div>
+                    <div class="user-details">
+                        <h4 id="currentUser">Admin</h4>
+                        <span>Administrator</span>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" style="width: 100%;" onclick="logout()">
+                    🚪 Logout
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Page -->
+            <div id="pageDashboard" class="page">
+                <div class="page-header">
+                    <h1>Dashboard</h1>
+                    <p>Overview of your cheat management system</p>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon purple">👥</div>
+                        <div class="stat-value" id="statUsers">0</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon blue">🔑</div>
+                        <div class="stat-value" id="statLicenses">0</div>
+                        <div class="stat-label">Active Licenses</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green">📥</div>
+                        <div class="stat-value" id="statDownloads">0</div>
+                        <div class="stat-label">Downloads Today</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon orange">🎮</div>
+                        <div class="stat-value" id="statGames">1</div>
+                        <div class="stat-label">Active Games</div>
+                    </div>
+                </div>
+                
+                <div class="quick-actions">
+                    <div class="quick-action" onclick="showPage('generate')">
+                        <div class="icon">🔑</div>
+                        <h3>Generate Keys</h3>
+                        <p>Create new license keys</p>
+                    </div>
+                    <div class="quick-action" onclick="showPage('users')">
+                        <div class="icon">👥</div>
+                        <h3>Manage Users</h3>
+                        <p>View and manage users</p>
+                    </div>
+                    <div class="quick-action" onclick="showPage('licenses')">
+                        <div class="icon">📋</div>
+                        <h3>View Licenses</h3>
+                        <p>All license keys</p>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📊 Recent Activity</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Action</th>
+                                        <th>Game</th>
+                                        <th>Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recentActivity">
+                                    <tr>
+                                        <td colspan="4" class="text-muted" style="text-align: center;">Loading...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Licenses Section -->
-            <div id="tabLicenses" class="section hidden">
-                <h2>All Licenses</h2>
-                <div style="margin-bottom: 15px;">
-                    <label>
-                        <input type="checkbox" id="filterUnused" onchange="loadLicenses()"> Only unused
-                    </label>
+            <!-- Users Page -->
+            <div id="pageUsers" class="page hidden">
+                <div class="page-header">
+                    <h1>Users Management</h1>
+                    <p>View and manage all registered users</p>
                 </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Key</th>
-                            <th>Game</th>
-                            <th>User</th>
-                            <th>Expires</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="licensesTable"></tbody>
-                </table>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>👥 All Users</h2>
+                        <button class="btn btn-sm btn-info" onclick="loadUsers()">🔄 Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Username</th>
+                                        <th>Status</th>
+                                        <th>Subscriptions</th>
+                                        <th>HWID</th>
+                                        <th>Last Login</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
+
+            <!-- Licenses Page -->
+            <div id="pageLicenses" class="page hidden">
+                <div class="page-header">
+                    <h1>Licenses</h1>
+                    <p>View all license keys and their status</p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>🔑 All Licenses</h2>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            <label style="display: flex; align-items: center; gap: 8px; color: var(--text-secondary);">
+                                <input type="checkbox" id="filterUnused" onchange="loadLicenses()"> Unused only
+                            </label>
+                            <button class="btn btn-sm btn-info" onclick="loadLicenses()">🔄 Refresh</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>License Key</th>
+                                        <th>Game</th>
+                                        <th>Status</th>
+                                        <th>User</th>
+                                        <th>Expires</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="licensesTable"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Generate Keys Page -->
+            <div id="pageGenerate" class="page hidden">
+                <div class="page-header">
+                    <h1>Generate License Keys</h1>
+                    <p>Create new license keys for distribution</p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>➕ New Keys</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Game</label>
+                                <select id="keyGame">
+                                    <option value="cs2">Counter-Strike 2</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Subscription Duration</label>
+                                <select id="keyDays">
+                                    <option value="">Lifetime ♾️</option>
+                                    <option value="1">1 Day</option>
+                                    <option value="7">1 Week</option>
+                                    <option value="30">1 Month</option>
+                                    <option value="90">3 Months</option>
+                                    <option value="365">1 Year</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Number of Keys</label>
+                                <input type="number" id="keyCount" value="1" min="1" max="100">
+                            </div>
+                            <div class="form-group">
+                                <label>Custom Prefix (optional)</label>
+                                <input type="text" id="keyPrefix" placeholder="e.g., VIP, TRIAL">
+                            </div>
+                        </div>
+                        
+                        <button class="btn btn-success" style="margin-top: 16px;" onclick="generateKeys()">
+                            🔑 Generate Keys
+                        </button>
+                        
+                        <div id="generatedKeys" class="keys-output hidden">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                <strong>Generated Keys:</strong>
+                                <button class="btn btn-sm btn-secondary" onclick="copyAllKeys()">📋 Copy All</button>
+                            </div>
+                            <div id="keysList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Versions Page -->
+            <div id="pageVersions" class="page hidden">
+                <div class="page-header">
+                    <h1>Version Management</h1>
+                    <p>View uploaded cheat versions</p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📦 Uploaded Versions</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Game</th>
+                                        <th>Version</th>
+                                        <th>Uploaded</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="versionsTable">
+                                    <tr>
+                                        <td>CS2</td>
+                                        <td><span class="badge badge-purple">Latest</span></td>
+                                        <td>Auto-updated via GitHub Actions</td>
+                                        <td><span class="badge badge-success">Active</span></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="text-muted" style="margin-top: 16px;">
+                            ℹ️ Versions are automatically uploaded when you push to GitHub. No manual upload needed.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- User Modal -->
+    <div id="userModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>👤 User Details</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="userModalContent"></div>
         </div>
     </div>
 
     <script>
-        const API_URL = '';  // Same origin
+        const API_URL = '';
         let token = localStorage.getItem('adminToken');
+        let generatedKeysList = [];
 
-        // Check if already logged in
         if (token) {
             verifyToken();
         }
 
+        // API Helper
         async function api(method, path, body = null) {
-            const headers = {
-                'Content-Type': 'application/json'
-            };
-            if (token) {
-                headers['Authorization'] = 'Bearer ' + token;
-            }
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = 'Bearer ' + token;
             
             const options = { method, headers };
-            if (body) {
-                options.body = JSON.stringify(body);
-            }
+            if (body) options.body = JSON.stringify(body);
             
-            const res = await fetch(API_URL + path, options);
-            return res.json();
+            try {
+                const res = await fetch(API_URL + path, options);
+                return await res.json();
+            } catch (err) {
+                showToast('Connection error', 'error');
+                return { error: 'Connection failed' };
+            }
         }
 
+        // Toast Notifications
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <span>${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}</span>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        // Auth Functions
         async function login() {
             const username = document.getElementById('loginUsername').value;
             const password = document.getElementById('loginPassword').value;
             
+            if (!username || !password) {
+                document.getElementById('loginError').textContent = 'Please fill in all fields';
+                return;
+            }
+            
             const res = await api('POST', '/api/auth/login', { username, password });
             
             if (res.token) {
-                token = res.token;
-                localStorage.setItem('adminToken', token);
-                
                 if (!res.user.is_admin) {
                     document.getElementById('loginError').textContent = 'Admin access required';
                     return;
                 }
                 
+                token = res.token;
+                localStorage.setItem('adminToken', token);
+                document.getElementById('currentUser').textContent = res.user.username;
                 showDashboard();
+                showToast('Welcome back!', 'success');
             } else {
                 document.getElementById('loginError').textContent = res.error || 'Login failed';
             }
@@ -594,6 +1114,7 @@
         async function verifyToken() {
             const res = await api('POST', '/api/auth/verify', { token });
             if (res.valid && res.user.is_admin) {
+                document.getElementById('currentUser').textContent = res.user.username;
                 showDashboard();
             } else {
                 logout();
@@ -604,23 +1125,44 @@
             token = null;
             localStorage.removeItem('adminToken');
             document.getElementById('loginScreen').style.display = 'flex';
-            document.getElementById('dashboard').style.display = 'none';
+            document.getElementById('appContainer').style.display = 'none';
         }
 
         function showDashboard() {
             document.getElementById('loginScreen').style.display = 'none';
-            document.getElementById('dashboard').style.display = 'block';
+            document.getElementById('appContainer').style.display = 'block';
             loadStats();
             loadUsers();
             loadLicenses();
+            loadRecentActivity();
         }
 
+        // Page Navigation
+        function showPage(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            
+            document.getElementById('page' + page.charAt(0).toUpperCase() + page.slice(1)).classList.remove('hidden');
+            event.target.closest('.nav-item')?.classList.add('active');
+        }
+
+        // Data Loading
         async function loadStats() {
             const res = await api('GET', '/api/admin/stats');
             document.getElementById('statUsers').textContent = res.users || 0;
-            document.getElementById('statGames').textContent = res.games || 0;
             document.getElementById('statLicenses').textContent = res.licenses || 0;
             document.getElementById('statDownloads').textContent = res.downloads_today || 0;
+            document.getElementById('statGames').textContent = res.games || 1;
+        }
+
+        async function loadRecentActivity() {
+            // This would need a dedicated endpoint - for now show placeholder
+            const tbody = document.getElementById('recentActivity');
+            tbody.innerHTML = `
+                <tr><td colspan="4" class="text-muted" style="text-align: center; padding: 40px;">
+                    Activity tracking coming soon
+                </td></tr>
+            `;
         }
 
         async function loadUsers() {
@@ -628,168 +1170,40 @@
             const tbody = document.getElementById('usersTable');
             tbody.innerHTML = '';
             
-            (res.users || []).forEach(user => {
+            if (!res.users || res.users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="text-align: center;">No users found</td></tr>';
+                return;
+            }
+            
+            res.users.forEach(user => {
                 const statusBadge = user.is_banned 
-                    ? '<span class="badge badge-danger">Banned</span>'
+                    ? '<span class="badge badge-danger">🚫 Banned</span>'
                     : user.is_admin 
-                        ? '<span class="badge badge-success">Admin</span>'
-                        : '<span class="badge badge-success">Active</span>';
+                        ? '<span class="badge badge-purple">👑 Admin</span>'
+                        : '<span class="badge badge-success">✅ Active</span>';
                 
                 const subsBadge = user.active_licenses > 0
-                    ? `<span class="badge badge-success">${user.active_games || 'Yes'}</span>`
+                    ? `<span class="badge badge-info">${user.active_games || 'Active'}</span>`
                     : '<span class="badge badge-warning">None</span>';
                 
-                const hwidShort = user.hwid ? user.hwid.substring(0, 12) + '...' : '-';
+                const hwidDisplay = user.hwid 
+                    ? `<span class="text-mono" style="font-size: 11px;" title="${user.hwid}">${user.hwid.substring(0, 10)}...</span>`
+                    : '<span class="text-muted">-</span>';
                 
                 tbody.innerHTML += `
                     <tr style="${user.is_banned ? 'opacity: 0.5;' : ''}">
                         <td>${user.id}</td>
-                        <td>${user.username} ${user.is_admin ? '👑' : ''}</td>
+                        <td><strong>${user.username}</strong></td>
                         <td>${statusBadge}</td>
                         <td>${subsBadge}</td>
-                        <td style="font-family: monospace; font-size: 11px;" title="${user.hwid || ''}">${hwidShort}</td>
+                        <td>${hwidDisplay}</td>
                         <td>${formatDate(user.last_login)}</td>
                         <td>
-                            <button class="btn btn-small btn-primary" onclick="openUserModal(${user.id})">Details</button>
+                            <button class="btn btn-sm btn-info" onclick="openUserModal(${user.id})">Details</button>
                         </td>
                     </tr>
                 `;
             });
-        }
-
-        async function openUserModal(userId) {
-            const res = await api('GET', '/api/admin/users/' + userId);
-            if (!res.user) {
-                alert('User not found');
-                return;
-            }
-            
-            const user = res.user;
-            const licenses = res.licenses || [];
-            const downloads = res.downloads || [];
-            
-            let licensesHtml = licenses.length === 0 
-                ? '<p style="color: var(--text-muted)">No licenses</p>'
-                : licenses.map(lic => `
-                    <div class="license-card">
-                        <div>
-                            <span class="game">${lic.game_id.toUpperCase()}</span>
-                            <span class="badge badge-${lic.status === 'active' || lic.status === 'lifetime' ? 'success' : 'danger'}">${lic.status}</span>
-                            <br><small style="color: var(--text-muted)">Expires: ${lic.expires_at ? formatDate(lic.expires_at) : 'Never'}</small>
-                        </div>
-                        <button class="btn btn-small btn-danger" onclick="revokeUserLicense(${user.id}, '${lic.game_id}')">Revoke</button>
-                    </div>
-                `).join('');
-            
-            document.getElementById('userModalContent').innerHTML = `
-                <div class="modal-body">
-                    <div class="user-info">
-                        <div class="info-item">
-                            <label>Username</label>
-                            <span>${user.username}</span>
-                        </div>
-                        <div class="info-item">
-                            <label>Status</label>
-                            <span>${user.is_banned ? '🚫 Banned' : '✅ Active'}</span>
-                        </div>
-                        <div class="info-item">
-                            <label>Created</label>
-                            <span>${formatDate(user.created_at)}</span>
-                        </div>
-                        <div class="info-item">
-                            <label>Last Login</label>
-                            <span>${formatDate(user.last_login)}</span>
-                        </div>
-                        <div class="info-item" style="grid-column: span 2;">
-                            <label>HWID</label>
-                            <span style="font-family: monospace; font-size: 12px;">${user.hwid || 'Not set'}</span>
-                        </div>
-                    </div>
-                    
-                    <div class="action-buttons">
-                        <button class="btn btn-small btn-primary" onclick="resetHwid(${user.id})">🔄 Reset HWID</button>
-                        ${user.is_banned 
-                            ? `<button class="btn btn-small btn-success" onclick="unbanUser(${user.id})">✅ Unban</button>`
-                            : `<button class="btn btn-small btn-warning" onclick="banUser(${user.id})">🚫 Ban</button>`
-                        }
-                        <button class="btn btn-small btn-success" onclick="extendUser(${user.id})">➕ Extend Sub</button>
-                        ${!user.is_admin ? `<button class="btn btn-small btn-danger" onclick="deleteUser(${user.id})">🗑️ Delete</button>` : ''}
-                    </div>
-                    
-                    <h3 style="margin-bottom: 15px;">📜 Licenses</h3>
-                    ${licensesHtml}
-                    
-                    <h3 style="margin: 20px 0 15px;">📥 Recent Downloads (${downloads.length})</h3>
-                    ${downloads.length === 0 
-                        ? '<p style="color: var(--text-muted)">No downloads yet</p>'
-                        : `<div style="max-height: 150px; overflow-y: auto;">
-                            ${downloads.map(d => `
-                                <div style="font-size: 12px; padding: 5px 0; border-bottom: 1px solid #333;">
-                                    <strong>${d.game_id}</strong> v${d.version} - ${formatDate(d.downloaded_at)}
-                                </div>
-                            `).join('')}
-                        </div>`
-                    }
-                </div>
-            `;
-            
-            document.getElementById('userModal').classList.remove('hidden');
-        }
-
-        function closeModal() {
-            document.getElementById('userModal').classList.add('hidden');
-        }
-
-        async function banUser(userId) {
-            const reason = prompt('Ban reason:');
-            if (reason === null) return;
-            
-            await api('POST', `/api/admin/users/${userId}/ban`, { reason });
-            alert('User banned');
-            closeModal();
-            loadUsers();
-        }
-
-        async function unbanUser(userId) {
-            if (!confirm('Unban this user?')) return;
-            await api('POST', `/api/admin/users/${userId}/unban`);
-            alert('User unbanned');
-            closeModal();
-            loadUsers();
-        }
-
-        async function deleteUser(userId) {
-            if (!confirm('DELETE this user? This cannot be undone!')) return;
-            if (!confirm('Are you REALLY sure?')) return;
-            
-            await api('DELETE', `/api/admin/users/${userId}`);
-            alert('User deleted');
-            closeModal();
-            loadUsers();
-            loadStats();
-        }
-
-        async function extendUser(userId) {
-            const game_id = prompt('Game ID (cs2, dayz, etc):');
-            if (!game_id) return;
-            
-            const days = prompt('Days to add:');
-            if (!days || isNaN(days)) return;
-            
-            const res = await api('POST', `/api/admin/users/${userId}/extend`, { 
-                game_id, 
-                days: parseInt(days) 
-            });
-            
-            alert(res.message || 'Done');
-            openUserModal(userId);  // Refresh modal
-        }
-
-        async function revokeUserLicense(userId, gameId) {
-            if (!confirm(`Revoke ${gameId.toUpperCase()} license?`)) return;
-            
-            await api('POST', `/api/admin/users/${userId}/revoke`, { game_id: gameId });
-            openUserModal(userId);  // Refresh modal
         }
 
         async function loadLicenses() {
@@ -798,27 +1212,40 @@
             const tbody = document.getElementById('licensesTable');
             tbody.innerHTML = '';
             
-            (res.licenses || []).forEach(lic => {
+            if (!res.licenses || res.licenses.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align: center;">No licenses found</td></tr>';
+                return;
+            }
+            
+            res.licenses.forEach(lic => {
                 const isExpired = lic.expires_at && new Date(lic.expires_at) < new Date();
-                const statusBadge = lic.username 
-                    ? `<span class="badge badge-success">Used by ${lic.username}</span>`
-                    : `<span class="badge badge-warning">Unused</span>`;
+                const statusBadge = lic.user_id 
+                    ? '<span class="badge badge-success">Used</span>'
+                    : '<span class="badge badge-warning">Available</span>';
+                
+                const expiryBadge = !lic.expires_at 
+                    ? '<span class="badge badge-info">♾️ Lifetime</span>'
+                    : isExpired 
+                        ? '<span class="badge badge-danger">Expired</span>'
+                        : `<span class="text-muted">${formatDate(lic.expires_at)}</span>`;
                 
                 tbody.innerHTML += `
                     <tr>
-                        <td style="font-family: monospace;">${lic.license_key}</td>
-                        <td>${lic.game_id.toUpperCase()}</td>
+                        <td><span class="text-mono">${lic.license_key}</span></td>
+                        <td><span class="badge badge-purple">${lic.game_id.toUpperCase()}</span></td>
                         <td>${statusBadge}</td>
-                        <td>${lic.expires_at ? formatDate(lic.expires_at) : '<span class="badge badge-success">Lifetime</span>'}</td>
+                        <td>${lic.username || '-'}</td>
+                        <td>${expiryBadge}</td>
                         <td>
-                            <button class="btn btn-small" onclick="copyKey('${lic.license_key}')">📋</button>
-                            <button class="btn btn-small btn-danger" onclick="revokeKey('${lic.license_key}')">🗑️</button>
+                            <button class="btn btn-icon btn-secondary" onclick="copyKey('${lic.license_key}')" title="Copy">📋</button>
+                            <button class="btn btn-icon btn-danger" onclick="revokeKey('${lic.license_key}')" title="Delete">🗑️</button>
                         </td>
                     </tr>
                 `;
             });
         }
 
+        // Key Generation
         async function generateKeys() {
             const game_id = document.getElementById('keyGame').value;
             const days = document.getElementById('keyDays').value || null;
@@ -832,68 +1259,214 @@
             const res = await api('POST', '/api/admin/licenses', body);
             
             if (res.success) {
+                generatedKeysList = res.keys;
                 const keysList = document.getElementById('keysList');
                 keysList.innerHTML = '';
+                
                 res.keys.forEach(key => {
                     keysList.innerHTML += `
                         <div class="key-item">
                             <span>${key}</span>
-                            <button class="copy-btn" onclick="copyKey('${key}')">Copy</button>
+                            <button class="btn btn-sm btn-secondary" onclick="copyKey('${key}')">Copy</button>
                         </div>
                     `;
                 });
+                
                 document.getElementById('generatedKeys').classList.remove('hidden');
+                showToast(`Generated ${res.keys.length} key(s)!`, 'success');
                 loadStats();
                 loadLicenses();
             } else {
-                alert('Error: ' + (res.error || 'Failed to generate'));
+                showToast(res.error || 'Failed to generate', 'error');
             }
-        }
-
-        async function resetHwid(userId) {
-            if (!confirm('Reset HWID? User can login from a new device.')) return;
-            const res = await api('DELETE', `/api/admin/users/${userId}/hwid`);
-            alert(res.message || 'HWID reset!');
-            loadUsers();
-            // Refresh modal if open
-            if (!document.getElementById('userModal').classList.contains('hidden')) {
-                openUserModal(userId);
-            }
-        }
-
-        async function revokeKey(key) {
-            if (!confirm('Revoke this license key?')) return;
-            await api('DELETE', `/api/admin/licenses/${encodeURIComponent(key)}`);
-            loadLicenses();
-            loadStats();
         }
 
         function copyKey(key) {
             navigator.clipboard.writeText(key);
-            // Brief feedback
-            const btn = event.target;
-            const original = btn.textContent;
-            btn.textContent = '✓';
-            setTimeout(() => btn.textContent = original, 1000);
+            showToast('Key copied!', 'success');
         }
 
-        function showTab(tab) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
+        function copyAllKeys() {
+            navigator.clipboard.writeText(generatedKeysList.join('\n'));
+            showToast('All keys copied!', 'success');
+        }
+
+        async function revokeKey(key) {
+            if (!confirm('Delete this license key?')) return;
+            await api('DELETE', `/api/admin/licenses/${encodeURIComponent(key)}`);
+            showToast('License deleted', 'success');
+            loadLicenses();
+            loadStats();
+        }
+
+        // User Modal
+        async function openUserModal(userId) {
+            const res = await api('GET', '/api/admin/users/' + userId);
+            if (!res.user) {
+                showToast('User not found', 'error');
+                return;
+            }
             
-            event.target.classList.add('active');
-            document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');
+            const user = res.user;
+            const licenses = res.licenses || [];
+            const downloads = res.downloads || [];
+            
+            let licensesHtml = licenses.length === 0 
+                ? '<p class="text-muted">No licenses assigned</p>'
+                : licenses.map(lic => `
+                    <div class="license-item">
+                        <div class="license-info">
+                            <div class="game-name">${lic.game_id.toUpperCase()}</div>
+                            <div class="expires">
+                                <span class="badge badge-${lic.status === 'lifetime' ? 'info' : lic.status === 'active' ? 'success' : 'danger'}">${lic.status}</span>
+                                ${lic.expires_at ? '• Expires: ' + formatDate(lic.expires_at) : '• Never expires'}
+                            </div>
+                        </div>
+                        <button class="btn btn-sm btn-danger" onclick="revokeUserLicense(${user.id}, '${lic.game_id}')">Revoke</button>
+                    </div>
+                `).join('');
+            
+            document.getElementById('userModalContent').innerHTML = `
+                <div class="user-profile">
+                    <div class="profile-item">
+                        <label>Username</label>
+                        <span>${user.username}</span>
+                    </div>
+                    <div class="profile-item">
+                        <label>Status</label>
+                        <span>${user.is_banned ? '🚫 Banned' : '✅ Active'}</span>
+                    </div>
+                    <div class="profile-item">
+                        <label>Role</label>
+                        <span>${user.is_admin ? '👑 Admin' : '👤 User'}</span>
+                    </div>
+                    <div class="profile-item">
+                        <label>Created</label>
+                        <span>${formatDate(user.created_at)}</span>
+                    </div>
+                    <div class="profile-item">
+                        <label>Last Login</label>
+                        <span>${formatDate(user.last_login)}</span>
+                    </div>
+                    <div class="profile-item">
+                        <label>HWID</label>
+                        <span class="text-mono" style="font-size: 12px; word-break: break-all;">${user.hwid || 'Not bound'}</span>
+                    </div>
+                </div>
+                
+                <div class="action-bar">
+                    <button class="btn btn-sm btn-info" onclick="resetHwid(${user.id})">🔄 Reset HWID</button>
+                    ${user.is_banned 
+                        ? `<button class="btn btn-sm btn-success" onclick="unbanUser(${user.id})">✅ Unban</button>`
+                        : `<button class="btn btn-sm btn-warning" onclick="banUser(${user.id})">🚫 Ban</button>`
+                    }
+                    <button class="btn btn-sm btn-success" onclick="extendUser(${user.id})">➕ Add Subscription</button>
+                    ${!user.is_admin ? `<button class="btn btn-sm btn-danger" onclick="deleteUser(${user.id})">🗑️ Delete User</button>` : ''}
+                </div>
+                
+                <h3 style="margin-bottom: 16px;">📜 Licenses</h3>
+                ${licensesHtml}
+                
+                <h3 style="margin: 24px 0 16px;">📥 Recent Downloads (${downloads.length})</h3>
+                ${downloads.length === 0 
+                    ? '<p class="text-muted">No downloads recorded</p>'
+                    : `<div style="max-height: 200px; overflow-y: auto;">
+                        ${downloads.map(d => `
+                            <div style="padding: 10px 0; border-bottom: 1px solid var(--border);">
+                                <strong>${d.game_id.toUpperCase()}</strong> v${d.version}
+                                <span class="text-muted" style="float: right;">${formatDate(d.downloaded_at)}</span>
+                            </div>
+                        `).join('')}
+                    </div>`
+                }
+            `;
+            
+            document.getElementById('userModal').classList.remove('hidden');
         }
 
+        function closeModal() {
+            document.getElementById('userModal').classList.add('hidden');
+        }
+
+        // User Actions
+        async function resetHwid(userId) {
+            if (!confirm('Reset HWID? User can login from a new device.')) return;
+            const res = await api('DELETE', `/api/admin/users/${userId}/hwid`);
+            showToast(res.message || 'HWID reset!', 'success');
+            loadUsers();
+            openUserModal(userId);
+        }
+
+        async function banUser(userId) {
+            const reason = prompt('Ban reason (optional):');
+            if (reason === null) return;
+            
+            await api('POST', `/api/admin/users/${userId}/ban`, { reason });
+            showToast('User banned', 'success');
+            closeModal();
+            loadUsers();
+        }
+
+        async function unbanUser(userId) {
+            if (!confirm('Unban this user?')) return;
+            await api('POST', `/api/admin/users/${userId}/unban`);
+            showToast('User unbanned', 'success');
+            closeModal();
+            loadUsers();
+        }
+
+        async function deleteUser(userId) {
+            if (!confirm('DELETE this user permanently?')) return;
+            if (!confirm('This cannot be undone. Are you sure?')) return;
+            
+            await api('DELETE', `/api/admin/users/${userId}`);
+            showToast('User deleted', 'success');
+            closeModal();
+            loadUsers();
+            loadStats();
+        }
+
+        async function extendUser(userId) {
+            const game_id = prompt('Game ID (cs2):') || 'cs2';
+            const days = prompt('Days to add:');
+            if (!days || isNaN(days)) return;
+            
+            const res = await api('POST', `/api/admin/users/${userId}/extend`, { 
+                game_id, 
+                days: parseInt(days) 
+            });
+            
+            showToast(res.message || 'Subscription updated', 'success');
+            openUserModal(userId);
+        }
+
+        async function revokeUserLicense(userId, gameId) {
+            if (!confirm(`Revoke ${gameId.toUpperCase()} license?`)) return;
+            await api('POST', `/api/admin/users/${userId}/revoke`, { game_id: gameId });
+            showToast('License revoked', 'success');
+            openUserModal(userId);
+        }
+
+        // Utilities
         function formatDate(dateStr) {
             if (!dateStr) return '-';
             const d = new Date(dateStr);
-            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'});
         }
 
         // Enter key for login
         document.getElementById('loginPassword').addEventListener('keypress', e => {
             if (e.key === 'Enter') login();
+        });
+        
+        // Close modal on escape
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeModal();
+        });
+        
+        // Close modal on backdrop click
+        document.getElementById('userModal').addEventListener('click', e => {
+            if (e.target.id === 'userModal') closeModal();
         });
     </script>
 </body>
