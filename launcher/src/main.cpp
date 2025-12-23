@@ -751,14 +751,6 @@ void ActivateLicense(const std::string& gameId) {
         }
     }).detach();
 }
-        } else {
-            g_errorMsg = ExtractJson(response, "error");
-            if (g_errorMsg.empty()) g_errorMsg = "Activation failed";
-        }
-        
-        g_isLoading = false;
-    }).detach();
-}
 
 bool DownloadFile(const std::string& url, const std::string& savePath) {
     HINTERNET hInternet = InternetOpenA("SingleProject", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);

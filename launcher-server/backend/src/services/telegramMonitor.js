@@ -10,8 +10,8 @@ const db = require('../database/db');
 // Configuration
 const CHANNEL_URL = 'https://t.me/s/cstwoupdate';
 const CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8285876782:AAHfsx8nm3MTxR_Fh5hlrMUZIwpY9gtzK60';
-const ADMIN_CHAT_ID = '6793512237'; // Admin to notify
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_ID;
 
 // Store last seen update date
 let lastSeenDate = null;
