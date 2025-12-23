@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - 'launcher/**'
-      - 'launcher-server/launcher/**'
       - '.github/workflows/launcher.yml'
   workflow_dispatch:
 
@@ -14,7 +13,7 @@ env:
 
 jobs:
   build-launcher:
-    name: 🚀 Build Launcher
+    name: 🚀 Build GUI Launcher
     runs-on: windows-latest
 
     steps:
@@ -29,72 +28,77 @@ jobs:
     - name: ⚡ Setup Ninja
       uses: seanmiddleditch/gha-setup-ninja@v5
 
-    - name: 📦 Download Dependencies (curl for Windows)
+    - name: 📦 Download ImGui
+      working-directory: launcher
       run: |
-        # curl is already available on windows-latest
+        Write-Host "Downloading ImGui..."
+        
+        # Create imgui directory
+        New-Item -ItemType Directory -Force -Path "imgui" | Out-Null
+        
+        # Download ImGui files
+        $imgui_version = "v1.90.1"
+        $imgui_base = "https://raw.githubusercontent.com/ocornut/imgui/$imgui_version"
+        
+        $files = @(
+          "imgui.h", "imgui.cpp", "imgui_draw.cpp", "imgui_tables.cpp", "imgui_widgets.cpp",
+          "imgui_internal.h", "imstb_rectpack.h", "imstb_textedit.h", "imstb_truetype.h",
+          "backends/imgui_impl_win32.h", "backends/imgui_impl_win32.cpp",
+          "backends/imgui_impl_dx11.h", "backends/imgui_impl_dx11.cpp"
+        )
+        
+        foreach ($file in $files) {
+          $fileName = Split-Path $file -Leaf
+          Write-Host "  Downloading $fileName..."
+          Invoke-WebRequest -Uri "$imgui_base/$file" -OutFile "imgui/$fileName"
+        }
+        
+        Write-Host "✅ ImGui downloaded"
 
-    - name: ⚙️ Configure Launcher
-      working-directory: launcher-server/launcher
+    - name: ⚙️ Configure
+      working-directory: launcher
       run: |
         Write-Host ""
         Write-Host "=========================================="
-        Write-Host "   LAUNCHER v${{ env.VERSION }}"
+        Write-Host "   CS-LEGIT LAUNCHER v${{ env.VERSION }}"
         Write-Host "=========================================="
-        
-        # Update version in code
-        $content = Get-Content -Path "src/main.cpp" -Raw
-        $content = $content -replace 'v\d+\.\d+\.\d+', "v${{ env.VERSION }}"
-        Set-Content -Path "src/main.cpp" -Value $content
         
         cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
     - name: 🔨 Build
-      working-directory: launcher-server/launcher
+      working-directory: launcher
       run: cmake --build build --config Release
 
     - name: ✅ Verify Build
-      working-directory: launcher-server/launcher
+      working-directory: launcher
       run: |
         Write-Host ""
         Write-Host "=========================================="
         Write-Host "   BUILD SUCCESS"
         Write-Host "=========================================="
         
-        if (Test-Path "build/launcher.exe") {
-          $size = [math]::Round((Get-Item "build/launcher.exe").Length / 1KB, 2)
-          Write-Host "   launcher.exe: $size KB"
-        } else {
-          Write-Host "Looking for exe files..."
-          Get-ChildItem -Path build -Recurse -Include *.exe | ForEach-Object {
-            $size = [math]::Round($_.Length / 1KB, 2)
-            Write-Host "   $($_.Name): $size KB"
-          }
+        Get-ChildItem -Path build -Recurse -Include *.exe | ForEach-Object {
+          $size = [math]::Round($_.Length / 1KB, 2)
+          Write-Host "   $($_.Name): $size KB"
         }
 
     - name: 📤 Upload to Server
       if: success() && github.ref == 'refs/heads/main'
-      working-directory: launcher-server/launcher
+      working-directory: launcher
       env:
         SERVER_URL: ${{ secrets.SERVER_URL }}
         CI_API_KEY: ${{ secrets.CI_API_KEY }}
       run: |
+        if ([string]::IsNullOrEmpty($env:SERVER_URL)) {
+          Write-Host "⚠️ SERVER_URL not set, skipping upload"
+          exit 0
+        }
+        
         Write-Host "Uploading to server..."
         
-        # Find the exe
         $exe = Get-ChildItem -Path build -Recurse -Include *.exe | Select-Object -First 1
         
         if ($exe) {
-          # Create version info
-          $versionJson = @{
-            version = "${{ env.VERSION }}"
-            build = ${{ github.run_number }}
-            commit = "${{ github.sha }}"
-            date = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-          } | ConvertTo-Json
-          
-          $versionJson | Out-File -FilePath "build/version.json" -Encoding UTF8
-          
-          # Upload using curl
           curl.exe -X POST "$env:SERVER_URL/api/admin/ci/upload" `
             -H "X-CI-API-Key: $env:CI_API_KEY" `
             -F "game_id=launcher" `
@@ -103,16 +107,11 @@ jobs:
             -F "file=@$($exe.FullName)"
             
           Write-Host "✅ Uploaded to server!"
-        } else {
-          Write-Host "❌ No exe found to upload"
-          exit 1
         }
 
     - name: 📦 Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Launcher-v${{ env.VERSION }}
-        path: |
-          launcher-server/launcher/build/*.exe
-          launcher-server/launcher/build/version.json
+        name: CS-Legit-Launcher-v${{ env.VERSION }}
+        path: launcher/build/*.exe
         retention-days: 30
