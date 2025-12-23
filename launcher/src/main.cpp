@@ -11,6 +11,7 @@
 #include <d3d11.h>
 #include <TlHelp32.h>
 #include <shellapi.h>
+#include <ShlObj.h>
 #include <WinInet.h>
 #include <string>
 #include <filesystem>
@@ -669,11 +670,13 @@ void RenderLoginScreen() {
         ImGui::SetCursorPosX((windowSize.x - regWidth) * 0.5f);
         ImGui::TextColored(theme::textDim, "Don't have an account?");
         ImGui::SameLine();
-        if (ImGui::TextLink("Register")) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::accent);
+        if (ImGui::SmallButton("Register")) {
             g_currentScreen = Screen::Register;
             g_fadeAlpha = 0.0f;
             g_errorMsg = "";
         }
+        ImGui::PopStyleColor();
         
         ImGui::PopStyleVar();
     }
@@ -760,11 +763,13 @@ void RenderRegisterScreen() {
         ImGui::SetCursorPosX((windowSize.x - backWidth) * 0.5f);
         ImGui::TextColored(theme::textDim, "Already have an account?");
         ImGui::SameLine();
-        if (ImGui::TextLink("Sign In")) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::accent);
+        if (ImGui::SmallButton("Sign In")) {
             g_currentScreen = Screen::Login;
             g_fadeAlpha = 0.0f;
             g_errorMsg = "";
         }
+        ImGui::PopStyleColor();
         
         ImGui::PopStyleVar();
     }
@@ -959,7 +964,7 @@ void SetupImGuiStyle() {
     colors[ImGuiCol_HeaderActive] = theme::accent;
     colors[ImGuiCol_Tab] = theme::surface;
     colors[ImGuiCol_TabHovered] = theme::accentHover;
-    colors[ImGuiCol_TabSelected] = theme::accent;
+    colors[ImGuiCol_TabActive] = theme::accent;
     colors[ImGuiCol_Text] = theme::text;
     colors[ImGuiCol_TextDisabled] = theme::textDim;
 }
