@@ -1,18 +1,58 @@
 /**
  * Telegram Channel Monitor for CS2 Updates
  * Monitors @cstwoupdate channel and updates game status when CS2 update is detected
+ * Sends notifications to admin via Telegram
  */
 
 const https = require('https');
 const db = require('../database/db');
 
-// Channel to monitor (public web view)
+// Configuration
 const CHANNEL_URL = 'https://t.me/s/cstwoupdate';
 const CHECK_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8285876782:AAHfsx8nm3MTxR_Fh5hlrMUZIwpY9gtzK60';
+const ADMIN_CHAT_ID = '6793512237'; // Admin to notify
 
 // Store last seen update date
 let lastSeenDate = null;
 let isRunning = false;
+
+/**
+ * Send notification to admin via Telegram
+ */
+function sendNotification(message) {
+    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+    const data = JSON.stringify({
+        chat_id: ADMIN_CHAT_ID,
+        text: message,
+        parse_mode: 'HTML'
+    });
+    
+    const req = https.request(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(data)
+        }
+    }, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+            if (res.statusCode === 200) {
+                console.log('[TelegramMonitor] Notification sent to admin');
+            } else {
+                console.error('[TelegramMonitor] Failed to send notification:', body);
+            }
+        });
+    });
+    
+    req.on('error', (e) => {
+        console.error('[TelegramMonitor] Notification error:', e.message);
+    });
+    
+    req.write(data);
+    req.end();
+}
 
 /**
  * Keywords that indicate a CS2 update
@@ -113,7 +153,8 @@ async function checkChannel() {
                             if (updateDate) {
                                 // Check if this is a new update
                                 if (!lastSeenDate || updateDate > lastSeenDate) {
-                                    console.log(`[TelegramMonitor] NEW CS2 UPDATE DETECTED: ${updateDate.toISOString()}`);
+                                    const dateStr = updateDate.toLocaleDateString('ru-RU');
+                                    console.log(`[TelegramMonitor] NEW CS2 UPDATE DETECTED: ${dateStr}`);
                                     
                                     // Update last seen date
                                     lastSeenDate = updateDate;
@@ -140,8 +181,17 @@ async function checkChannel() {
                                     const currentStatus = getGameStatus('cs2');
                                     if (currentStatus.status === 'operational') {
                                         setGameStatus('cs2', 'updating', 
-                                            `CS2 обновление от ${updateDate.toLocaleDateString('ru-RU')} - чит обновляется`, 
+                                            `CS2 обновление от ${dateStr} - чит обновляется`, 
                                             'telegram_bot'
+                                        );
+                                        
+                                        // Send notification to admin
+                                        sendNotification(
+                                            `🚨 <b>CS2 UPDATE DETECTED!</b>\n\n` +
+                                            `📅 Дата: ${dateStr}\n` +
+                                            `🎮 Статус чита: <b>UPDATING</b>\n\n` +
+                                            `⚠️ Нужно обновить offsets!\n\n` +
+                                            `После обновления зайди в админку и нажми ✅ WORKING`
                                         );
                                     }
                                     
