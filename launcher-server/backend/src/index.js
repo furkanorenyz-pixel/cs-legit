@@ -18,6 +18,9 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
+// Serve admin panel static files
+app.use('/panel', express.static(path.join(__dirname, '../../admin-panel')));
+
 // ============================================
 // Middleware
 // ============================================
