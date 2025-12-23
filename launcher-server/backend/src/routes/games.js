@@ -41,7 +41,7 @@ router.get('/status', (req, res) => {
     `).all();
     
     // Read offsets to check if they're valid
-    const offsetsPath = path.join(__dirname, '../../storage/offsets');
+    const offsetsPath = path.join(__dirname, '../../../storage/offsets');
     
     const gameStatuses = {};
     const processedGames = new Set();
