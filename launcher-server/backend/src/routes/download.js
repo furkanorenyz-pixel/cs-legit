@@ -18,7 +18,7 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-32-byte-key-change
  * PUBLIC - Download launcher (no auth required)
  */
 router.get('/launcher', (req, res) => {
-    const launcherDir = path.join(__dirname, '../../storage/games/launcher');
+    const launcherDir = path.join(__dirname, '../../../storage/games/launcher');
     
     if (!fs.existsSync(launcherDir)) {
         return res.status(404).json({ error: 'Launcher not available' });
