@@ -74,6 +74,21 @@ db.exec(`
     )
 `);
 
+// Add ban columns if they don't exist
+try {
+    db.exec('ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0');
+    console.log('✅ Added is_banned column');
+} catch (e) {
+    // Column already exists
+}
+
+try {
+    db.exec('ALTER TABLE users ADD COLUMN ban_reason TEXT');
+    console.log('✅ Added ban_reason column');
+} catch (e) {
+    // Column already exists
+}
+
 // Create default admin if not exists
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
 if (!adminExists) {

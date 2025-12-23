@@ -294,6 +294,100 @@
             margin-top: 10px;
         }
         
+        /* Modal */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background: var(--bg-card);
+            border-radius: 20px;
+            border: 1px solid #333;
+            width: 90%;
+            max-width: 700px;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 25px;
+            border-bottom: 1px solid #333;
+        }
+        
+        .modal-header h2 {
+            margin: 0;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text);
+            font-size: 28px;
+            cursor: pointer;
+        }
+        
+        .modal-body {
+            padding: 25px;
+        }
+        
+        .user-info {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .info-item {
+            background: var(--bg-dark);
+            padding: 12px 15px;
+            border-radius: 10px;
+        }
+        
+        .info-item label {
+            color: var(--text-muted);
+            font-size: 12px;
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .info-item span {
+            font-weight: 600;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 25px;
+        }
+        
+        .license-card {
+            background: var(--bg-dark);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .license-card .game {
+            font-weight: 700;
+            color: var(--accent);
+        }
+        
         /* Responsive */
         @media (max-width: 768px) {
             .stats-grid {
@@ -398,20 +492,32 @@
 
             <!-- Users Section -->
             <div id="tabUsers" class="section hidden">
-                <h2>Users</h2>
+                <h2>Users Management</h2>
                 <table>
                     <thead>
                         <tr>
                             <th>ID</th>
                             <th>Username</th>
+                            <th>Status</th>
+                            <th>Active Subs</th>
                             <th>HWID</th>
-                            <th>Created</th>
                             <th>Last Login</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="usersTable"></tbody>
                 </table>
+            </div>
+
+            <!-- User Details Modal -->
+            <div id="userModal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>👤 User Details</h2>
+                        <button class="close-btn" onclick="closeModal()">&times;</button>
+                    </div>
+                    <div id="userModalContent"></div>
+                </div>
             </div>
 
             <!-- Licenses Section -->
@@ -518,24 +624,172 @@
         }
 
         async function loadUsers() {
-            const res = await api('GET', '/api/admin/users');
+            const res = await api('GET', '/api/admin/users-full');
             const tbody = document.getElementById('usersTable');
             tbody.innerHTML = '';
             
             (res.users || []).forEach(user => {
+                const statusBadge = user.is_banned 
+                    ? '<span class="badge badge-danger">Banned</span>'
+                    : user.is_admin 
+                        ? '<span class="badge badge-success">Admin</span>'
+                        : '<span class="badge badge-success">Active</span>';
+                
+                const subsBadge = user.active_licenses > 0
+                    ? `<span class="badge badge-success">${user.active_games || 'Yes'}</span>`
+                    : '<span class="badge badge-warning">None</span>';
+                
+                const hwidShort = user.hwid ? user.hwid.substring(0, 12) + '...' : '-';
+                
                 tbody.innerHTML += `
-                    <tr>
+                    <tr style="${user.is_banned ? 'opacity: 0.5;' : ''}">
                         <td>${user.id}</td>
                         <td>${user.username} ${user.is_admin ? '👑' : ''}</td>
-                        <td style="font-family: monospace; font-size: 11px;">${user.hwid || '-'}</td>
-                        <td>${formatDate(user.created_at)}</td>
+                        <td>${statusBadge}</td>
+                        <td>${subsBadge}</td>
+                        <td style="font-family: monospace; font-size: 11px;" title="${user.hwid || ''}">${hwidShort}</td>
                         <td>${formatDate(user.last_login)}</td>
                         <td>
-                            <button class="btn btn-small btn-danger" onclick="resetHwid(${user.id})">Reset HWID</button>
+                            <button class="btn btn-small btn-primary" onclick="openUserModal(${user.id})">Details</button>
                         </td>
                     </tr>
                 `;
             });
+        }
+
+        async function openUserModal(userId) {
+            const res = await api('GET', '/api/admin/users/' + userId);
+            if (!res.user) {
+                alert('User not found');
+                return;
+            }
+            
+            const user = res.user;
+            const licenses = res.licenses || [];
+            const downloads = res.downloads || [];
+            
+            let licensesHtml = licenses.length === 0 
+                ? '<p style="color: var(--text-muted)">No licenses</p>'
+                : licenses.map(lic => `
+                    <div class="license-card">
+                        <div>
+                            <span class="game">${lic.game_id.toUpperCase()}</span>
+                            <span class="badge badge-${lic.status === 'active' || lic.status === 'lifetime' ? 'success' : 'danger'}">${lic.status}</span>
+                            <br><small style="color: var(--text-muted)">Expires: ${lic.expires_at ? formatDate(lic.expires_at) : 'Never'}</small>
+                        </div>
+                        <button class="btn btn-small btn-danger" onclick="revokeUserLicense(${user.id}, '${lic.game_id}')">Revoke</button>
+                    </div>
+                `).join('');
+            
+            document.getElementById('userModalContent').innerHTML = `
+                <div class="modal-body">
+                    <div class="user-info">
+                        <div class="info-item">
+                            <label>Username</label>
+                            <span>${user.username}</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Status</label>
+                            <span>${user.is_banned ? '🚫 Banned' : '✅ Active'}</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Created</label>
+                            <span>${formatDate(user.created_at)}</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Last Login</label>
+                            <span>${formatDate(user.last_login)}</span>
+                        </div>
+                        <div class="info-item" style="grid-column: span 2;">
+                            <label>HWID</label>
+                            <span style="font-family: monospace; font-size: 12px;">${user.hwid || 'Not set'}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="action-buttons">
+                        <button class="btn btn-small btn-primary" onclick="resetHwid(${user.id})">🔄 Reset HWID</button>
+                        ${user.is_banned 
+                            ? `<button class="btn btn-small btn-success" onclick="unbanUser(${user.id})">✅ Unban</button>`
+                            : `<button class="btn btn-small btn-warning" onclick="banUser(${user.id})">🚫 Ban</button>`
+                        }
+                        <button class="btn btn-small btn-success" onclick="extendUser(${user.id})">➕ Extend Sub</button>
+                        ${!user.is_admin ? `<button class="btn btn-small btn-danger" onclick="deleteUser(${user.id})">🗑️ Delete</button>` : ''}
+                    </div>
+                    
+                    <h3 style="margin-bottom: 15px;">📜 Licenses</h3>
+                    ${licensesHtml}
+                    
+                    <h3 style="margin: 20px 0 15px;">📥 Recent Downloads (${downloads.length})</h3>
+                    ${downloads.length === 0 
+                        ? '<p style="color: var(--text-muted)">No downloads yet</p>'
+                        : `<div style="max-height: 150px; overflow-y: auto;">
+                            ${downloads.map(d => `
+                                <div style="font-size: 12px; padding: 5px 0; border-bottom: 1px solid #333;">
+                                    <strong>${d.game_id}</strong> v${d.version} - ${formatDate(d.downloaded_at)}
+                                </div>
+                            `).join('')}
+                        </div>`
+                    }
+                </div>
+            `;
+            
+            document.getElementById('userModal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('userModal').classList.add('hidden');
+        }
+
+        async function banUser(userId) {
+            const reason = prompt('Ban reason:');
+            if (reason === null) return;
+            
+            await api('POST', `/api/admin/users/${userId}/ban`, { reason });
+            alert('User banned');
+            closeModal();
+            loadUsers();
+        }
+
+        async function unbanUser(userId) {
+            if (!confirm('Unban this user?')) return;
+            await api('POST', `/api/admin/users/${userId}/unban`);
+            alert('User unbanned');
+            closeModal();
+            loadUsers();
+        }
+
+        async function deleteUser(userId) {
+            if (!confirm('DELETE this user? This cannot be undone!')) return;
+            if (!confirm('Are you REALLY sure?')) return;
+            
+            await api('DELETE', `/api/admin/users/${userId}`);
+            alert('User deleted');
+            closeModal();
+            loadUsers();
+            loadStats();
+        }
+
+        async function extendUser(userId) {
+            const game_id = prompt('Game ID (cs2, dayz, etc):');
+            if (!game_id) return;
+            
+            const days = prompt('Days to add:');
+            if (!days || isNaN(days)) return;
+            
+            const res = await api('POST', `/api/admin/users/${userId}/extend`, { 
+                game_id, 
+                days: parseInt(days) 
+            });
+            
+            alert(res.message || 'Done');
+            openUserModal(userId);  // Refresh modal
+        }
+
+        async function revokeUserLicense(userId, gameId) {
+            if (!confirm(`Revoke ${gameId.toUpperCase()} license?`)) return;
+            
+            await api('POST', `/api/admin/users/${userId}/revoke`, { game_id: gameId });
+            openUserModal(userId);  // Refresh modal
         }
 
         async function loadLicenses() {
@@ -597,9 +851,14 @@
         }
 
         async function resetHwid(userId) {
-            if (!confirm('Reset HWID for this user?')) return;
-            await api('DELETE', `/api/admin/users/${userId}/hwid`);
+            if (!confirm('Reset HWID? User can login from a new device.')) return;
+            const res = await api('DELETE', `/api/admin/users/${userId}/hwid`);
+            alert(res.message || 'HWID reset!');
             loadUsers();
+            // Refresh modal if open
+            if (!document.getElementById('userModal').classList.contains('hidden')) {
+                openUserModal(userId);
+            }
         }
 
         async function revokeKey(key) {

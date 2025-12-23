@@ -23,11 +23,19 @@ function authenticate(req, res, next) {
         const decoded = jwt.verify(token, JWT_SECRET);
         
         // Get user from database
-        const user = db.prepare('SELECT id, username, is_admin, hwid FROM users WHERE id = ?')
+        const user = db.prepare('SELECT id, username, is_admin, is_banned, ban_reason, hwid FROM users WHERE id = ?')
                        .get(decoded.userId);
         
         if (!user) {
             return res.status(401).json({ error: 'User not found' });
+        }
+        
+        // Check if user is banned
+        if (user.is_banned) {
+            return res.status(403).json({ 
+                error: 'Account banned', 
+                reason: user.ban_reason || 'Contact support for details'
+            });
         }
         
         req.user = user;
