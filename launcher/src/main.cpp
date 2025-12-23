@@ -59,10 +59,10 @@ struct GameInfo {
 };
 
 std::vector<GameInfo> g_games = {
-    {"cs2", "Counter-Strike 2", "CS", "cs2.exe", "ESP, Radar, No Recoil", false, 0, "1.0.0", true},
-    {"dayz", "DayZ", "DZ", "DayZ_x64.exe", "ESP, Loot Filter, Aimbot", false, 0, "1.0.0", false},
-    {"rust", "Rust", "RS", "RustClient.exe", "ESP, Recoil Control", false, 0, "---", false},
-    {"apex", "Apex Legends", "AP", "r5apex.exe", "ESP, Aim Assist", false, 0, "---", false}
+    {"cs2", "Counter-Strike 2", "CS", "cs2.exe", "ESP (Box, Health, Name, Distance)", false, 0, "1.0.0", true},
+    {"dayz", "DayZ", "DZ", "DayZ_x64.exe", "In development", false, 0, "---", false},
+    {"rust", "Rust", "RS", "RustClient.exe", "In development", false, 0, "---", false},
+    {"apex", "Apex Legends", "AP", "r5apex.exe", "In development", false, 0, "---", false}
 };
 
 int g_selectedGame = 0;
