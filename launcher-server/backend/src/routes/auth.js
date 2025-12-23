@@ -1,0 +1,141 @@
+/**
+ * Authentication Routes
+ */
+
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const db = require('../database/db');
+
+const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-me';
+
+/**
+ * POST /api/auth/login
+ * Login and get JWT token
+ */
+router.post('/login', (req, res) => {
+    const { username, password, hwid } = req.body;
+    
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password required' });
+    }
+    
+    // Find user
+    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    
+    if (!user) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Verify password
+    if (!bcrypt.compareSync(password, user.password_hash)) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    // Check HWID if set
+    if (user.hwid && hwid && user.hwid !== hwid) {
+        return res.status(403).json({ error: 'HWID mismatch - contact support' });
+    }
+    
+    // Update HWID if not set
+    if (!user.hwid && hwid) {
+        db.prepare('UPDATE users SET hwid = ? WHERE id = ?').run(hwid, user.id);
+    }
+    
+    // Update last login
+    db.prepare('UPDATE users SET last_login = datetime("now") WHERE id = ?').run(user.id);
+    
+    // Generate JWT
+    const token = jwt.sign(
+        { userId: user.id, username: user.username },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+    );
+    
+    res.json({
+        token,
+        user: {
+            id: user.id,
+            username: user.username,
+            is_admin: !!user.is_admin
+        }
+    });
+});
+
+/**
+ * POST /api/auth/register
+ * Register new user (can be disabled in production)
+ */
+router.post('/register', (req, res) => {
+    const { username, password, license_key } = req.body;
+    
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Username and password required' });
+    }
+    
+    if (username.length < 3 || username.length > 32) {
+        return res.status(400).json({ error: 'Username must be 3-32 characters' });
+    }
+    
+    if (password.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    
+    // Check if username exists
+    const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    if (existing) {
+        return res.status(409).json({ error: 'Username already taken' });
+    }
+    
+    // If license key provided, verify it
+    let licenseInfo = null;
+    if (license_key) {
+        licenseInfo = db.prepare('SELECT * FROM licenses WHERE license_key = ? AND user_id IS NULL')
+                        .get(license_key);
+        if (!licenseInfo) {
+            return res.status(400).json({ error: 'Invalid or already used license key' });
+        }
+    }
+    
+    // Create user
+    const hash = bcrypt.hashSync(password, 10);
+    const result = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)')
+                     .run(username, hash);
+    
+    // Assign license if provided
+    if (licenseInfo) {
+        db.prepare('UPDATE licenses SET user_id = ? WHERE id = ?')
+          .run(result.lastInsertRowid, licenseInfo.id);
+    }
+    
+    res.status(201).json({
+        message: 'User created successfully',
+        user_id: result.lastInsertRowid
+    });
+});
+
+/**
+ * POST /api/auth/verify
+ * Verify token is valid
+ */
+router.post('/verify', (req, res) => {
+    const { token } = req.body;
+    
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = db.prepare('SELECT id, username, is_admin FROM users WHERE id = ?')
+                       .get(decoded.userId);
+        
+        if (!user) {
+            return res.status(401).json({ valid: false });
+        }
+        
+        res.json({ valid: true, user });
+    } catch (err) {
+        res.json({ valid: false });
+    }
+});
+
+module.exports = router;
+

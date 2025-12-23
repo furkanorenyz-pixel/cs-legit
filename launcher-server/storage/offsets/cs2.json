@@ -1,0 +1,32 @@
+{
+  "game": "cs2",
+  "version": "2025-12-23",
+  "client_dll": {
+    "dwEntityList": "0x1A1AD48",
+    "dwLocalPlayerController": "0x1A6DEF0",
+    "dwLocalPlayerPawn": "0x1890F38",
+    "dwViewMatrix": "0x1A82730",
+    "dwPlantedC4": "0x1A94E00",
+    "dwGlobalVars": "0x1889108"
+  },
+  "entity": {
+    "m_iHealth": "0x344",
+    "m_iTeamNum": "0x3E3",
+    "m_pGameSceneNode": "0x328",
+    "m_fFlags": "0x3EC"
+  },
+  "controller": {
+    "m_hPlayerPawn": "0x62C",
+    "m_bPawnIsAlive": "0x814",
+    "m_sSanitizedPlayerName": "0x768"
+  },
+  "scene": {
+    "m_vecAbsOrigin": "0xD0"
+  },
+  "player": {
+    "m_entitySpottedState": "0x2290",
+    "m_bSpotted": "0x8",
+    "m_ArmorValue": "0x2414"
+  }
+}
+

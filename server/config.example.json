@@ -1,9 +1,0 @@
-{
-  "port": 3000,
-  "host": "0.0.0.0",
-  "filesDirectory": "./files",
-  "maxFileSize": 104857600,
-  "allowedGames": ["cs2", "dayz", "rust", "apex"],
-  "allowedTypes": ["external", "internal"]
-}
-
