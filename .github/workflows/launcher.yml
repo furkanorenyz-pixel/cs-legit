@@ -96,9 +96,11 @@ jobs:
         
         Write-Host "Uploading to server..."
         
-        $exe = Get-ChildItem -Path build -Recurse -Include *.exe | Select-Object -First 1
+        # Find launcher.exe specifically (not CMake test files)
+        $exe = Get-ChildItem -Path build -Recurse -Include "launcher.exe" | Select-Object -First 1
         
         if ($exe) {
+          Write-Host "Found: $($exe.FullName)"
           curl.exe -X POST "$env:SERVER_URL/api/admin/ci/upload" `
             -H "X-CI-API-Key: $env:CI_API_KEY" `
             -F "game_id=launcher" `
@@ -107,6 +109,9 @@ jobs:
             -F "file=@$($exe.FullName)"
             
           Write-Host "✅ Uploaded to server!"
+        } else {
+          Write-Host "⚠️ launcher.exe not found!"
+          Get-ChildItem -Path build -Recurse -Include *.exe | ForEach-Object { Write-Host "  Found: $($_.Name)" }
         }
 
     - name: 📦 Upload Artifact
