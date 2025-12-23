@@ -40,7 +40,7 @@ app.use(limiter);
 // Stricter limit for downloads
 const downloadLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: 10, // 10 downloads per hour
+    max: 1000, // Increased limit for updates/testing
     message: { error: 'Download limit exceeded.' }
 });
 app.use('/api/download', downloadLimiter);
