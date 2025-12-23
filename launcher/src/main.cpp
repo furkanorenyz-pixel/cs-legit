@@ -31,8 +31,15 @@
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
+#include "protection.hpp"
 
 namespace fs = std::filesystem;
+
+// ============================================
+// Protection flags
+// ============================================
+bool g_protectionPassed = false;
+bool g_bypassVM = false; // Set to true for development
 
 // ============================================
 // Configuration
@@ -1162,6 +1169,33 @@ void SetupStyle() {
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
+    // ============================================
+    // PROTECTION CHECKS
+    // ============================================
+    int protResult = Protection::RunProtectionChecks();
+    
+    if (protResult == 1) {
+        // Debugger detected - silent exit
+        Protection::SecureExit(0);
+    }
+    
+    if (protResult == 2 && !g_bypassVM) {
+        // VM detected - show warning (can be bypassed for dev)
+        MessageBoxA(NULL, "This software cannot run in virtual machines.", 
+                   "Security", MB_ICONWARNING | MB_OK);
+        Protection::SecureExit(0);
+    }
+    
+    if (protResult == 3 || protResult == 4) {
+        // Integrity/hooks failed - silent exit
+        Protection::SecureExit(0);
+    }
+    
+    g_protectionPassed = true;
+    
+    // ============================================
+    // Normal startup
+    // ============================================
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, 
         GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"SingleProject", nullptr };
     RegisterClassExW(&wc);
@@ -1200,11 +1234,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     ZeroMemory(&msg, sizeof(msg));
     auto lastTime = std::chrono::high_resolution_clock::now();
     
+    static int protCheckCounter = 0;
+    
     while (msg.message != WM_QUIT) {
         if (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
             continue;
+        }
+        
+        // Periodic protection check (every ~5 seconds at 60fps)
+        if (++protCheckCounter > 300) {
+            protCheckCounter = 0;
+            if (Protection::IsDebuggerAttached() || Protection::HasDebuggerWindows()) {
+                Protection::SecureExit(0);
+            }
         }
         
         auto now = std::chrono::high_resolution_clock::now();
