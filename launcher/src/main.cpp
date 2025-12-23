@@ -1121,13 +1121,25 @@ void RenderMain() {
     
     g_fadeAlpha = fminf(g_fadeAlpha + ImGui::GetIO().DeltaTime * 3.0f, 1.0f);
     
-    // Background
-    dl->AddRectFilled(ImVec2(0, 0), ws, IM_COL32(10, 10, 15, 255));
+    // Background with subtle gradient
+    for (int y = 0; y < (int)ws.y; y += 4) {
+        float t = (float)y / ws.y;
+        dl->AddRectFilled(ImVec2(0, (float)y), ImVec2(ws.x, (float)y + 4),
+            IM_COL32(8 + (int)(t * 4), 8 + (int)(t * 3), 14 + (int)(t * 6), 255));
+    }
     
-    // Sidebar
-    float sidebarW = 180.0f;
-    dl->AddRectFilled(ImVec2(0, 0), ImVec2(sidebarW, ws.y), IM_COL32(15, 15, 22, 255));
-    dl->AddLine(ImVec2(sidebarW, 0), ImVec2(sidebarW, ws.y), IM_COL32(40, 40, 60, 255));
+    // Sidebar with gradient
+    float sidebarW = 185.0f;
+    for (int y = 0; y < (int)ws.y; y += 3) {
+        float t = (float)y / ws.y;
+        dl->AddRectFilled(ImVec2(0, (float)y), ImVec2(sidebarW, (float)y + 3),
+            IM_COL32(14 + (int)(t * 3), 14 + (int)(t * 2), 22 + (int)(t * 5), 255));
+    }
+    // Sidebar border with glow
+    dl->AddRectFilledMultiColor(ImVec2(sidebarW - 2, 0), ImVec2(sidebarW, ws.y),
+        IM_COL32(80, 60, 140, 40), IM_COL32(80, 60, 140, 10),
+        IM_COL32(80, 60, 140, 10), IM_COL32(80, 60, 140, 40));
+    dl->AddLine(ImVec2(sidebarW, 0), ImVec2(sidebarW, ws.y), IM_COL32(60, 50, 90, 100));
     
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ws);
@@ -1137,71 +1149,114 @@ void RenderMain() {
     if (ImGui::Begin("##main", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove)) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, g_fadeAlpha);
         
+        float pulse = (sinf(g_animTimer * 1.5f) + 1.0f) * 0.5f;
+        
         // ===== SIDEBAR =====
-        // Logo
-        ImGui::SetCursorPos(ImVec2(20, 20));
-        dl->AddCircleFilled(ImVec2(40, 40), 18, theme::gradientA, 24);
-        ImGui::SetCursorPos(ImVec2(65, 22));
+        // Logo with animated glow
+        float logoX = 35, logoY = 32;
+        for (int r = 24; r >= 16; r -= 2) {
+            dl->AddCircleFilled(ImVec2(logoX, logoY), (float)r, 
+                IM_COL32(140, 90, 245, (24 - r) * 3 + (int)(pulse * 10)), 32);
+        }
+        dl->AddCircleFilled(ImVec2(logoX, logoY), 16, theme::gradientA, 32);
+        dl->AddCircle(ImVec2(logoX, logoY), 17, IM_COL32(255, 255, 255, 40), 32, 1.5f);
+        dl->AddText(ImVec2(logoX - 4, logoY - 8), IM_COL32(255, 255, 255, 255), "S");
+        
+        ImGui::SetCursorPos(ImVec2(58, 18));
         ImGui::TextColored(theme::text, "Single");
-        ImGui::SetCursorPos(ImVec2(65, 38));
-        ImGui::TextColored(theme::textSec, "Project");
+        ImGui::SetCursorPos(ImVec2(58, 34));
+        ImGui::TextColored(theme::accent, "Project");
         
-        // User
-        ImGui::SetCursorPos(ImVec2(15, 70));
-        dl->AddRectFilled(ImVec2(10, 65), ImVec2(sidebarW - 10, 105), IM_COL32(25, 25, 35, 255), 8.0f);
-        ImGui::SetCursorPos(ImVec2(20, 73));
-        ImGui::TextColored(theme::textSec, "Welcome,");
-        ImGui::SetCursorPos(ImVec2(20, 88));
-        ImGui::TextColored(theme::text, "%s", g_displayName.c_str());
+        // User card with gradient
+        ImVec2 userCardPos(8, 62);
+        ImVec2 userCardSize(sidebarW - 16, 48);
+        dl->AddRectFilled(userCardPos, ImVec2(userCardPos.x + userCardSize.x, userCardPos.y + userCardSize.y),
+            IM_COL32(28, 26, 40, 255), 10.0f);
+        dl->AddRect(userCardPos, ImVec2(userCardPos.x + userCardSize.x, userCardPos.y + userCardSize.y),
+            IM_COL32(60, 50, 90, 60), 10.0f);
         
-        // Games list
-        ImGui::SetCursorPos(ImVec2(15, 120));
-        ImGui::TextColored(theme::textDim, "GAMES");
+        // User avatar
+        dl->AddCircleFilled(ImVec2(userCardPos.x + 22, userCardPos.y + 24), 12, IM_COL32(100, 80, 160, 255), 20);
+        dl->AddText(ImVec2(userCardPos.x + 18, userCardPos.y + 16), IM_COL32(255, 255, 255, 255), "👤");
         
-        float gameY = 140;
+        ImGui::SetCursorPos(ImVec2(userCardPos.x + 42, userCardPos.y + 8));
+        ImGui::TextColored(theme::textDim, "Welcome");
+        ImGui::SetCursorPos(ImVec2(userCardPos.x + 42, userCardPos.y + 24));
+        std::string truncName = g_displayName.length() > 12 ? g_displayName.substr(0, 11) + ".." : g_displayName;
+        ImGui::TextColored(theme::text, "%s", truncName.c_str());
+        
+        // Games section header
+        ImGui::SetCursorPos(ImVec2(12, 122));
+        ImGui::TextColored(theme::textDim, "⎯ GAMES ⎯");
+        
+        float gameY = 145;
         for (int i = 0; i < (int)g_games.size(); i++) {
             const auto& game = g_games[i];
             bool selected = (i == g_selectedGame);
+            bool hovered = false;
             
-            ImVec2 btnPos(10, gameY);
-            ImVec2 btnSize(sidebarW - 20, 50);
+            ImVec2 btnPos(8, gameY);
+            ImVec2 btnSize(sidebarW - 16, 52);
             
-            ImU32 bgColor = selected ? IM_COL32(140, 90, 245, 40) : IM_COL32(0, 0, 0, 0);
-            if (!selected) {
-                ImVec2 mousePos = ImGui::GetMousePos();
-                if (mousePos.x >= btnPos.x && mousePos.x <= btnPos.x + btnSize.x &&
-                    mousePos.y >= btnPos.y && mousePos.y <= btnPos.y + btnSize.y) {
-                    bgColor = IM_COL32(40, 40, 55, 255);
-                }
+            // Check hover
+            ImVec2 mousePos = ImGui::GetMousePos();
+            if (mousePos.x >= btnPos.x && mousePos.x <= btnPos.x + btnSize.x &&
+                mousePos.y >= btnPos.y && mousePos.y <= btnPos.y + btnSize.y) {
+                hovered = true;
             }
             
-            dl->AddRectFilled(btnPos, ImVec2(btnPos.x + btnSize.x, btnPos.y + btnSize.y), bgColor, 8.0f);
-            
+            // Background
             if (selected) {
-                dl->AddRectFilled(ImVec2(0, btnPos.y), ImVec2(3, btnPos.y + btnSize.y), theme::gradientA);
+                dl->AddRectFilled(btnPos, ImVec2(btnPos.x + btnSize.x, btnPos.y + btnSize.y),
+                    IM_COL32(100, 70, 180, 50), 10.0f);
+                dl->AddRect(btnPos, ImVec2(btnPos.x + btnSize.x, btnPos.y + btnSize.y),
+                    IM_COL32(140, 100, 220, 100), 10.0f);
+                // Selection indicator
+                dl->AddRectFilled(ImVec2(0, btnPos.y + 6), ImVec2(4, btnPos.y + btnSize.y - 6), 
+                    theme::gradientA, 2.0f);
+            } else if (hovered) {
+                dl->AddRectFilled(btnPos, ImVec2(btnPos.x + btnSize.x, btnPos.y + btnSize.y),
+                    IM_COL32(45, 42, 60, 255), 10.0f);
             }
             
-            // Icon
-            dl->AddCircleFilled(ImVec2(btnPos.x + 22, btnPos.y + 25), 14, 
-                game.available ? theme::gradientA : IM_COL32(60, 60, 80, 255), 20);
+            // Game icon with ring
+            float iconX = btnPos.x + 24;
+            float iconY = btnPos.y + 26;
+            ImU32 iconBg = game.available ? IM_COL32(100, 70, 180, 255) : IM_COL32(55, 55, 70, 255);
+            ImU32 iconRing = game.available ? IM_COL32(140, 100, 220, 150) : IM_COL32(70, 70, 85, 100);
+            
+            dl->AddCircleFilled(ImVec2(iconX, iconY), 15, iconBg, 24);
+            dl->AddCircle(ImVec2(iconX, iconY), 16, iconRing, 24, 1.5f);
+            
             ImVec2 iconSize = ImGui::CalcTextSize(game.icon.c_str());
-            dl->AddText(ImVec2(btnPos.x + 22 - iconSize.x * 0.5f, btnPos.y + 25 - iconSize.y * 0.5f),
-                IM_COL32(255, 255, 255, game.available ? 255 : 150), game.icon.c_str());
+            dl->AddText(ImVec2(iconX - iconSize.x * 0.5f, iconY - iconSize.y * 0.5f),
+                IM_COL32(255, 255, 255, game.available ? 255 : 120), game.icon.c_str());
             
-            // Name
-            dl->AddText(ImVec2(btnPos.x + 45, btnPos.y + 10), 
-                IM_COL32(255, 255, 255, game.available ? 255 : 120), game.name.c_str());
+            // Game name
+            ImU32 nameCol = game.available ? IM_COL32(240, 240, 250, 255) : IM_COL32(120, 120, 135, 255);
+            dl->AddText(ImVec2(btnPos.x + 48, btnPos.y + 11), nameCol, game.name.c_str());
             
-            // Status
-            const char* status = game.hasLicense 
-                ? (game.daysRemaining < 0 ? "Lifetime" : "Active")
-                : (game.available ? "No license" : "Coming soon");
-            ImU32 statusColor = game.hasLicense 
-                ? IM_COL32(50, 220, 120, 255) 
-                : (game.available ? IM_COL32(255, 180, 50, 255) : IM_COL32(100, 100, 120, 255));
-            dl->AddText(ImVec2(btnPos.x + 45, btnPos.y + 28), statusColor, status);
+            // Status with dot indicator
+            const char* status;
+            ImU32 statusCol, dotCol;
+            if (game.hasLicense) {
+                status = game.daysRemaining < 0 ? "Lifetime" : "Active";
+                statusCol = IM_COL32(80, 220, 140, 255);
+                dotCol = IM_COL32(80, 220, 140, 255);
+            } else if (game.available) {
+                status = "Not active";
+                statusCol = IM_COL32(255, 180, 80, 255);
+                dotCol = IM_COL32(255, 180, 80, 255);
+            } else {
+                status = "Soon";
+                statusCol = IM_COL32(100, 100, 115, 255);
+                dotCol = IM_COL32(100, 100, 115, 255);
+            }
             
-            // Click
+            dl->AddCircleFilled(ImVec2(btnPos.x + 52, btnPos.y + 35), 3, dotCol, 12);
+            dl->AddText(ImVec2(btnPos.x + 60, btnPos.y + 28), statusCol, status);
+            
+            // Click handler
             ImGui::SetCursorPos(btnPos);
             ImGui::InvisibleButton(("game" + std::to_string(i)).c_str(), btnSize);
             if (ImGui::IsItemClicked()) {
@@ -1210,196 +1265,383 @@ void RenderMain() {
                 g_successMsg = "";
             }
             
-            gameY += 55;
+            gameY += 56;
         }
         
-        // Logout
-        ImGui::SetCursorPos(ImVec2(10, ws.y - 50));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.15f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.15f, 0.15f, 1.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
-        if (ImGui::Button("Logout", ImVec2(sidebarW - 20, 36))) {
+        // Logout button - premium style
+        ImVec2 logoutPos(8, ws.y - 55);
+        ImVec2 logoutSize(sidebarW - 16, 42);
+        
+        bool logoutHovered = false;
+        ImVec2 mousePos = ImGui::GetMousePos();
+        if (mousePos.x >= logoutPos.x && mousePos.x <= logoutPos.x + logoutSize.x &&
+            mousePos.y >= logoutPos.y && mousePos.y <= logoutPos.y + logoutSize.y) {
+            logoutHovered = true;
+        }
+        
+        dl->AddRectFilled(logoutPos, ImVec2(logoutPos.x + logoutSize.x, logoutPos.y + logoutSize.y),
+            logoutHovered ? IM_COL32(70, 35, 35, 255) : IM_COL32(45, 30, 30, 255), 10.0f);
+        dl->AddRect(logoutPos, ImVec2(logoutPos.x + logoutSize.x, logoutPos.y + logoutSize.y),
+            IM_COL32(120, 60, 60, logoutHovered ? 150 : 80), 10.0f);
+        
+        ImVec2 logoutText = ImGui::CalcTextSize("↩ Logout");
+        dl->AddText(ImVec2(logoutPos.x + (logoutSize.x - logoutText.x) * 0.5f, logoutPos.y + 12),
+            IM_COL32(255, 180, 180, 255), "↩ Logout");
+        
+        ImGui::SetCursorPos(logoutPos);
+        if (ImGui::InvisibleButton("##logout", logoutSize)) {
             DoLogout();
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor(2);
             ImGui::PopStyleVar();
             ImGui::End();
             ImGui::PopStyleVar();
             ImGui::PopStyleColor();
             return;
         }
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor(2);
         
         // ===== CONTENT AREA =====
-        float contentX = sidebarW + 30;
-        float contentW = ws.x - sidebarW - 60;
+        float contentX = sidebarW + 25;
+        float contentW = ws.x - sidebarW - 50;
         
         GameInfo& game = g_games[g_selectedGame];
+        float pulse = (sinf(g_animTimer * 2.0f) + 1.0f) * 0.5f; // 0-1 pulse
         
-        // ===== TOP RIGHT BUTTONS (Refresh, Minimize, Close) =====
-        float btnSize = 28.0f;
-        float btnGap = 5.0f;
-        float btnY = 8.0f;
-        float btnStartX = ws.x - (btnSize * 3 + btnGap * 2 + 10);
-        
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-        
-        // Refresh button
-        ImGui::SetCursorPos(ImVec2(btnStartX, btnY));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.25f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.35f, 0.2f, 1.0f));
-        if (ImGui::Button("O##refresh", ImVec2(btnSize, btnSize))) {
-            RefreshData();
-            FetchGameStatus();
+        // ===== TOP BAR =====
+        // Gradient header background
+        ImVec2 headerPos(sidebarW, 0);
+        ImVec2 headerSize(ws.x - sidebarW, 75);
+        for (int i = 0; i < (int)headerSize.x; i += 2) {
+            float t = (float)i / headerSize.x;
+            ImU32 col = IM_COL32(
+                (int)(18 + t * 8),
+                (int)(18 + t * 5),
+                (int)(28 + t * 12),
+                255
+            );
+            dl->AddRectFilled(
+                ImVec2(headerPos.x + i, headerPos.y),
+                ImVec2(headerPos.x + i + 2, headerPos.y + headerSize.y),
+                col
+            );
         }
+        dl->AddLine(ImVec2(sidebarW, 75), ImVec2(ws.x, 75), IM_COL32(60, 50, 90, 100));
+        
+        // Window controls (top right)
+        float btnSize = 26.0f;
+        float btnY = 10.0f;
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 13.0f);
+        
+        // Refresh
+        ImGui::SetCursorPos(ImVec2(ws.x - 110, btnY));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.22f, 0.18f, 0.9f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.40f, 0.25f, 1.0f));
+        if (ImGui::Button("↻##ref", ImVec2(btnSize, btnSize))) { RefreshData(); FetchGameStatus(); }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Refresh");
         ImGui::PopStyleColor(2);
         
-        // Minimize button
-        ImGui::SetCursorPos(ImVec2(btnStartX + btnSize + btnGap, btnY));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.4f, 1.0f));
-        if (ImGui::Button("-##min", ImVec2(btnSize, btnSize))) {
-            ShowWindow(g_hwnd, SW_MINIMIZE);
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimize");
+        // Minimize
+        ImGui::SetCursorPos(ImVec2(ws.x - 78, btnY));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.22f, 0.28f, 0.9f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.35f, 0.45f, 1.0f));
+        if (ImGui::Button("–##min", ImVec2(btnSize, btnSize))) { ShowWindow(g_hwnd, SW_MINIMIZE); }
         ImGui::PopStyleColor(2);
         
-        // Close button
-        ImGui::SetCursorPos(ImVec2(btnStartX + (btnSize + btnGap) * 2, btnY));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.15f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
-        if (ImGui::Button("X##close", ImVec2(btnSize, btnSize))) {
-            PostQuitMessage(0);
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Close");
+        // Close
+        ImGui::SetCursorPos(ImVec2(ws.x - 46, btnY));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.18f, 0.18f, 0.9f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.25f, 0.25f, 1.0f));
+        if (ImGui::Button("✕##cls", ImVec2(btnSize, btnSize))) { PostQuitMessage(0); }
         ImGui::PopStyleColor(2);
         
         ImGui::PopStyleVar();
         
-        // Game title
-        ImGui::SetCursorPos(ImVec2(contentX, 20));
-        ImGui::TextColored(theme::text, "%s", game.name.c_str());
-        
-        // Game status indicator
-        ImGui::SameLine();
-        ImGui::SetCursorPosY(22);
-        if (g_gameStatus == "operational") {
-            ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), " [WORKING]");
-        } else if (g_gameStatus == "updating") {
-            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), " [UPDATING]");
-        } else if (g_gameStatus == "offline") {
-            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), " [OFFLINE]");
-        } else {
-            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), " [%s]", g_gameStatus.c_str());
+        // Game icon circle with glow
+        float iconX = contentX + 28;
+        float iconY = 38;
+        ImU32 glowCol = game.available ? IM_COL32(140, 90, 245, (int)(40 + pulse * 30)) : IM_COL32(80, 80, 100, 40);
+        for (int r = 30; r >= 22; r -= 2) {
+            dl->AddCircleFilled(ImVec2(iconX, iconY), (float)r, IM_COL32(140, 90, 245, (30 - r) * 4), 32);
         }
+        dl->AddCircleFilled(ImVec2(iconX, iconY), 22, game.available ? theme::gradientA : IM_COL32(60, 60, 80, 255), 32);
+        dl->AddCircle(ImVec2(iconX, iconY), 23, IM_COL32(255, 255, 255, 30), 32, 2.0f);
         
-        ImGui::SetCursorPos(ImVec2(contentX, 40));
+        ImVec2 iconTextSize = ImGui::CalcTextSize(game.icon.c_str());
+        dl->AddText(ImVec2(iconX - iconTextSize.x * 0.5f, iconY - iconTextSize.y * 0.5f),
+            IM_COL32(255, 255, 255, game.available ? 255 : 150), game.icon.c_str());
+        
+        // Game name & status
+        ImGui::SetCursorPos(ImVec2(contentX + 60, 18));
+        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]); // Use default font for now
+        ImGui::TextColored(theme::text, "%s", game.name.c_str());
+        ImGui::PopFont();
+        
+        ImGui::SetCursorPos(ImVec2(contentX + 60, 38));
         ImGui::TextColored(theme::textDim, "v%s", game.version.c_str());
         ImGui::SameLine();
-        ImGui::TextColored(theme::textDim, " - %s", g_gameStatusMsg.c_str());
         
-        // License card
-        ImVec2 licCardPos(contentX, 70);
-        ImVec2 licCardSize(contentW, 65);
-        dl->AddRectFilled(licCardPos, ImVec2(licCardPos.x + licCardSize.x, licCardPos.y + licCardSize.y),
-            IM_COL32(20, 20, 30, 255), 12.0f);
+        // Status badge
+        ImVec4 statusCol;
+        const char* statusText;
+        if (g_gameStatus == "operational") {
+            statusCol = ImVec4(0.15f, 0.85f, 0.45f, 1.0f);
+            statusText = "● ONLINE";
+        } else if (g_gameStatus == "updating") {
+            statusCol = ImVec4(1.0f, 0.75f, 0.0f, 1.0f);
+            statusText = "◐ UPDATING";
+        } else if (g_gameStatus == "offline") {
+            statusCol = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            statusText = "○ OFFLINE";
+        } else {
+            statusCol = ImVec4(0.5f, 0.5f, 0.55f, 1.0f);
+            statusText = "? UNKNOWN";
+        }
         
-        ImGui::SetCursorPos(ImVec2(licCardPos.x + 16, licCardPos.y + 10));
-        ImGui::TextColored(theme::textSec, "License Status");
+        ImGui::TextColored(statusCol, "%s", statusText);
         
-        ImGui::SetCursorPos(ImVec2(licCardPos.x + 16, licCardPos.y + 32));
+        // ===== MAIN CARDS AREA =====
+        float cardY = 90;
+        float cardSpacing = 12;
+        float cardRadius = 14.0f;
+        
+        // License Card - premium gradient border
+        ImVec2 licPos(contentX, cardY);
+        ImVec2 licSize(contentW, 80);
+        
+        // Card background with subtle gradient
+        for (int i = 0; i < (int)licSize.y; i += 2) {
+            float t = (float)i / licSize.y;
+            dl->AddRectFilled(
+                ImVec2(licPos.x, licPos.y + i),
+                ImVec2(licPos.x + licSize.x, licPos.y + i + 2),
+                IM_COL32(22 + (int)(t * 5), 22 + (int)(t * 3), 35 + (int)(t * 8), 255),
+                i == 0 ? cardRadius : 0
+            );
+        }
+        dl->AddRect(licPos, ImVec2(licPos.x + licSize.x, licPos.y + licSize.y), 
+            IM_COL32(70, 60, 100, 80), cardRadius);
+        
+        // License icon
+        float licIconX = licPos.x + 30;
+        float licIconY = licPos.y + 40;
+        dl->AddCircleFilled(ImVec2(licIconX, licIconY), 18, 
+            game.hasLicense ? IM_COL32(40, 180, 100, 255) : IM_COL32(180, 60, 60, 255), 24);
+        dl->AddText(ImVec2(licIconX - 6, licIconY - 8), IM_COL32(255, 255, 255, 255), 
+            game.hasLicense ? "✓" : "✗");
+        
+        ImGui::SetCursorPos(ImVec2(licPos.x + 58, licPos.y + 16));
+        ImGui::TextColored(theme::textSec, "LICENSE STATUS");
+        
+        ImGui::SetCursorPos(ImVec2(licPos.x + 58, licPos.y + 38));
         if (game.hasLicense) {
             ImGui::TextColored(theme::success, "ACTIVE");
             ImGui::SameLine();
             if (game.daysRemaining < 0) {
-                ImGui::TextColored(theme::textSec, "- Lifetime");
+                ImGui::TextColored(ImVec4(0.9f, 0.75f, 0.3f, 1.0f), "∞ LIFETIME");
             } else {
-                ImGui::TextColored(theme::textSec, "- %d days", game.daysRemaining);
+                ImGui::TextColored(theme::text, "%d days remaining", game.daysRemaining);
             }
         } else {
-            ImGui::TextColored(theme::error, "NO LICENSE");
+            ImGui::TextColored(theme::error, "NOT ACTIVATED");
         }
         
-        float nextY = licCardPos.y + licCardSize.y + 12;
+        // Progress bar for license time (if has license and not lifetime)
+        if (game.hasLicense && game.daysRemaining > 0 && game.daysRemaining <= 365) {
+            float progress = (float)game.daysRemaining / 30.0f;
+            if (progress > 1.0f) progress = 1.0f;
+            ImVec2 barPos(licPos.x + 58, licPos.y + 60);
+            ImVec2 barSize(licSize.x - 80, 6);
+            dl->AddRectFilled(barPos, ImVec2(barPos.x + barSize.x, barPos.y + barSize.y), 
+                IM_COL32(40, 40, 55, 255), 3.0f);
+            dl->AddRectFilled(barPos, ImVec2(barPos.x + barSize.x * progress, barPos.y + barSize.y), 
+                progress > 0.3f ? IM_COL32(60, 200, 120, 255) : IM_COL32(255, 150, 50, 255), 3.0f);
+        }
         
-        // Activate license (if no license)
+        cardY = licPos.y + licSize.y + cardSpacing;
+        
+        // Activate License Card (if no license)
         if (!game.hasLicense && game.available) {
-            ImVec2 actPos(contentX, nextY);
-            ImVec2 actSize(contentW, 70);
-            dl->AddRectFilled(actPos, ImVec2(actPos.x + actSize.x, actPos.y + actSize.y),
-                IM_COL32(25, 20, 35, 255), 12.0f);
+            ImVec2 actPos(contentX, cardY);
+            ImVec2 actSize(contentW, 75);
             
-            ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 10));
-            ImGui::TextColored(theme::accent, "Activate License");
+            // Gradient background
+            for (int i = 0; i < (int)actSize.y; i += 2) {
+                float t = (float)i / actSize.y;
+                dl->AddRectFilled(
+                    ImVec2(actPos.x, actPos.y + i),
+                    ImVec2(actPos.x + actSize.x, actPos.y + i + 2),
+                    IM_COL32(30 + (int)(t * 5), 22 + (int)(t * 3), 45 + (int)(t * 10), 255),
+                    i == 0 ? cardRadius : 0
+                );
+            }
+            dl->AddRect(actPos, ImVec2(actPos.x + actSize.x, actPos.y + actSize.y), 
+                IM_COL32(140, 90, 200, 60), cardRadius);
             
-            ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 32));
-            ImGui::SetNextItemWidth(actSize.x - 130);
-            StyledInput("##actkey", g_activateKey, sizeof(g_activateKey));
+            ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 12));
+            ImGui::TextColored(theme::accent, "🔑 ACTIVATE LICENSE");
+            
+            ImGui::SetCursorPos(ImVec2(actPos.x + 16, actPos.y + 38));
+            ImGui::SetNextItemWidth(actSize.x - 140);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.12f, 0.12f, 0.18f, 1.0f));
+            ImGui::InputTextWithHint("##actkey", "Enter license key...", g_activateKey, sizeof(g_activateKey));
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
             
             ImGui::SameLine();
-            if (StyledButton("Activate", ImVec2(90, 34), !g_isLoading)) {
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.28f, 0.85f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.55f, 0.38f, 0.95f, 1.0f));
+            if (ImGui::Button("ACTIVATE", ImVec2(100, 32)) && !g_isLoading) {
                 ActivateLicense(game.id);
             }
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar();
             
-            nextY = actPos.y + actSize.y + 12;
+            cardY = actPos.y + actSize.y + cardSpacing;
         }
         
-        // Description card (instead of Features)
-        ImVec2 descPos(contentX, nextY);
-        ImVec2 descSize(contentW, 55);
-        dl->AddRectFilled(descPos, ImVec2(descPos.x + descSize.x, descPos.y + descSize.y),
-            IM_COL32(20, 20, 30, 255), 12.0f);
+        // Features Card
+        ImVec2 featPos(contentX, cardY);
+        ImVec2 featSize(contentW, 70);
         
-        ImGui::SetCursorPos(ImVec2(descPos.x + 16, descPos.y + 10));
-        ImGui::TextColored(theme::textSec, "Included:");
+        // Card bg
+        dl->AddRectFilled(featPos, ImVec2(featPos.x + featSize.x, featPos.y + featSize.y), 
+            IM_COL32(22, 22, 35, 255), cardRadius);
+        dl->AddRect(featPos, ImVec2(featPos.x + featSize.x, featPos.y + featSize.y), 
+            IM_COL32(50, 50, 70, 80), cardRadius);
         
-        ImGui::SetCursorPos(ImVec2(descPos.x + 16, descPos.y + 30));
-        if (game.available) {
-            ImGui::TextColored(theme::success, "%s", game.description.c_str());
+        ImGui::SetCursorPos(ImVec2(featPos.x + 16, featPos.y + 12));
+        ImGui::TextColored(theme::textSec, "FEATURES");
+        
+        // Feature badges
+        float badgeX = featPos.x + 16;
+        float badgeY = featPos.y + 38;
+        
+        if (game.available && !game.description.empty()) {
+            // Parse features (comma separated)
+            std::string desc = game.description;
+            std::vector<std::string> features;
+            size_t pos = 0;
+            while ((pos = desc.find(",")) != std::string::npos) {
+                std::string feat = desc.substr(0, pos);
+                if (!feat.empty()) features.push_back(feat);
+                desc.erase(0, pos + 1);
+            }
+            if (!desc.empty()) features.push_back(desc);
+            
+            for (const auto& feat : features) {
+                // Trim whitespace
+                std::string trimmed = feat;
+                while (!trimmed.empty() && trimmed[0] == ' ') trimmed.erase(0, 1);
+                while (!trimmed.empty() && trimmed.back() == ' ') trimmed.pop_back();
+                
+                ImVec2 textSize = ImGui::CalcTextSize(trimmed.c_str());
+                float badgeW = textSize.x + 20;
+                
+                if (badgeX + badgeW > featPos.x + featSize.x - 16) {
+                    badgeX = featPos.x + 16;
+                    badgeY += 26;
+                }
+                
+                dl->AddRectFilled(ImVec2(badgeX, badgeY), ImVec2(badgeX + badgeW, badgeY + 22),
+                    IM_COL32(60, 45, 100, 200), 6.0f);
+                dl->AddRect(ImVec2(badgeX, badgeY), ImVec2(badgeX + badgeW, badgeY + 22),
+                    IM_COL32(140, 100, 200, 100), 6.0f);
+                dl->AddText(ImVec2(badgeX + 10, badgeY + 3), IM_COL32(220, 200, 255, 255), trimmed.c_str());
+                
+                badgeX += badgeW + 8;
+            }
         } else {
-            ImGui::TextColored(theme::textDim, "Coming soon...");
+            dl->AddText(ImVec2(badgeX, badgeY), IM_COL32(100, 100, 120, 255), "Coming soon...");
         }
         
-        // Launch button
-        nextY = descPos.y + descSize.y + 15;
-        ImGui::SetCursorPos(ImVec2(contentX, nextY));
+        cardY = featPos.y + featSize.y + cardSpacing + 5;
+        
+        // ===== LAUNCH BUTTON =====
+        ImVec2 launchPos(contentX, cardY);
+        ImVec2 launchSize(contentW, 55);
         
         if (g_isDownloading) {
-            ImVec2 barPos(contentX, nextY + 5);
-            dl->AddRectFilled(barPos, ImVec2(barPos.x + contentW, barPos.y + 45),
-                IM_COL32(30, 30, 45, 255), 10.0f);
-            dl->AddRectFilled(barPos, ImVec2(barPos.x + contentW * g_downloadProgress, barPos.y + 45),
-                theme::gradientA, 10.0f);
+            // Download progress bar
+            dl->AddRectFilled(launchPos, ImVec2(launchPos.x + launchSize.x, launchPos.y + launchSize.y),
+                IM_COL32(25, 25, 40, 255), 12.0f);
+            
+            float prog = g_downloadProgress.load();
+            dl->AddRectFilled(launchPos, ImVec2(launchPos.x + launchSize.x * prog, launchPos.y + launchSize.y),
+                IM_COL32(100, 70, 200, 255), 12.0f);
             
             char progText[32];
-            sprintf_s(progText, "%.0f%%", g_downloadProgress * 100.0f);
+            sprintf_s(progText, "Downloading... %.0f%%", prog * 100.0f);
             ImVec2 ptSize = ImGui::CalcTextSize(progText);
-            dl->AddText(ImVec2(barPos.x + (contentW - ptSize.x) * 0.5f, barPos.y + 12),
+            dl->AddText(ImVec2(launchPos.x + (launchSize.x - ptSize.x) * 0.5f, launchPos.y + 18),
                 IM_COL32(255, 255, 255, 255), progText);
         } else {
-            bool canLaunch = game.hasLicense && game.available && !g_cheatRunning;
-            std::string btnLabel = g_cheatRunning ? "  RUNNING  " : "  LAUNCH  ";
-            if (StyledButton(btnLabel.c_str(), ImVec2(contentW, 50), canLaunch)) {
+            bool canLaunch = game.hasLicense && game.available && !g_cheatRunning && g_gameStatus == "operational";
+            
+            // Button gradient
+            ImU32 btnColA = canLaunch ? IM_COL32(120, 80, 220, 255) : IM_COL32(50, 50, 65, 255);
+            ImU32 btnColB = canLaunch ? IM_COL32(90, 50, 180, 255) : IM_COL32(40, 40, 55, 255);
+            
+            for (int i = 0; i < (int)launchSize.y; i += 2) {
+                float t = (float)i / launchSize.y;
+                ImU32 col = IM_COL32(
+                    (int)((1 - t) * ((btnColA >> 0) & 0xFF) + t * ((btnColB >> 0) & 0xFF)),
+                    (int)((1 - t) * ((btnColA >> 8) & 0xFF) + t * ((btnColB >> 8) & 0xFF)),
+                    (int)((1 - t) * ((btnColA >> 16) & 0xFF) + t * ((btnColB >> 16) & 0xFF)),
+                    255
+                );
+                dl->AddRectFilled(
+                    ImVec2(launchPos.x, launchPos.y + i),
+                    ImVec2(launchPos.x + launchSize.x, launchPos.y + i + 2),
+                    col, i == 0 ? 12.0f : 0
+                );
+            }
+            
+            // Glow effect when can launch
+            if (canLaunch) {
+                dl->AddRect(launchPos, ImVec2(launchPos.x + launchSize.x, launchPos.y + launchSize.y),
+                    IM_COL32(180, 140, 255, (int)(60 + pulse * 40)), 12.0f, 0, 2.0f);
+            }
+            
+            const char* btnText = g_cheatRunning ? "◉ RUNNING" : (canLaunch ? "▶ LAUNCH" : "LAUNCH");
+            ImVec2 textSize = ImGui::CalcTextSize(btnText);
+            dl->AddText(ImVec2(launchPos.x + (launchSize.x - textSize.x) * 0.5f, launchPos.y + 18),
+                canLaunch ? IM_COL32(255, 255, 255, 255) : IM_COL32(120, 120, 140, 255), btnText);
+            
+            // Invisible button for click
+            ImGui::SetCursorPos(launchPos);
+            if (ImGui::InvisibleButton("##launch", launchSize) && canLaunch) {
                 LaunchGame(g_selectedGame);
             }
         }
         
-        // Messages
-        nextY += 65;
+        // ===== MESSAGES =====
+        cardY = launchPos.y + launchSize.y + 12;
         if (!g_errorMsg.empty()) {
-            ImGui::SetCursorPos(ImVec2(contentX, nextY));
-            ImGui::TextColored(theme::error, "%s", g_errorMsg.c_str());
+            ImVec2 msgPos(contentX, cardY);
+            dl->AddRectFilled(msgPos, ImVec2(msgPos.x + contentW, msgPos.y + 30),
+                IM_COL32(80, 30, 30, 200), 8.0f);
+            ImGui::SetCursorPos(ImVec2(msgPos.x + 12, msgPos.y + 6));
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.6f, 1.0f), "⚠ %s", g_errorMsg.c_str());
         }
         if (!g_successMsg.empty()) {
-            ImGui::SetCursorPos(ImVec2(contentX, nextY));
-            ImGui::TextColored(theme::success, "%s", g_successMsg.c_str());
+            ImVec2 msgPos(contentX, cardY);
+            dl->AddRectFilled(msgPos, ImVec2(msgPos.x + contentW, msgPos.y + 30),
+                IM_COL32(30, 80, 50, 200), 8.0f);
+            ImGui::SetCursorPos(ImVec2(msgPos.x + 12, msgPos.y + 6));
+            ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.7f, 1.0f), "✓ %s", g_successMsg.c_str());
         }
         
-        // Footer
+        // Footer with gradient line
+        dl->AddRectFilledMultiColor(
+            ImVec2(sidebarW, ws.y - 35), ImVec2(ws.x, ws.y - 34),
+            IM_COL32(60, 50, 90, 0), IM_COL32(60, 50, 90, 60),
+            IM_COL32(60, 50, 90, 60), IM_COL32(60, 50, 90, 0)
+        );
+        
         ImGui::SetCursorPos(ImVec2(contentX, ws.y - 25));
-        ImGui::TextColored(theme::textDim, PROJECT_NAME " v" LAUNCHER_VERSION);
+        ImGui::TextColored(theme::textDim, PROJECT_NAME);
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.55f, 0.45f, 0.80f, 0.8f), " v" LAUNCHER_VERSION);
         
         // ===== UPDATE NOTIFICATION =====
         if (g_updateAvailable && !g_updateDownloading) {
