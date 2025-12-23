@@ -1060,7 +1060,7 @@ void RenderLogin() {
         std::string verText = "v" LAUNCHER_VERSION;
         ImVec2 verSize = ImGui::CalcTextSize(verText.c_str());
         ImGui::SetCursorPos(ImVec2((ws.x - verSize.x) * 0.5f, ws.y - 25));
-        ImGui::TextColored(theme::textDim, "%s", verText.c_str());
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.4f), "%s", verText.c_str());
         
         // Error/success messages (overlay)
         if (!g_errorMsg.empty()) {
