@@ -1,27 +1,27 @@
 <div align="center">
 
-# ⚡ EXTERNAL ESP v1.0.0
+# ⚡ Single-Project
 
-### 🎮 Complete CS2 Enhancement Suite
+### 🎮 Complete Gaming Platform with Launcher, Server & Website
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.0.0-blueviolet?style=for-the-badge)
+![Launcher](https://img.shields.io/badge/LAUNCHER-v2.0-blueviolet?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_x64-0078D6?style=for-the-badge&logo=windows)
-![C++](https://img.shields.io/badge/C++-23-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)
-![DirectX](https://img.shields.io/badge/DirectX-11-green?style=for-the-badge)
+![Backend](https://img.shields.io/badge/NODE.JS-18+-339933?style=for-the-badge&logo=node.js)
+![Status](https://img.shields.io/badge/STATUS-Operational-success?style=for-the-badge)
 
 <br/>
 
-| 🚀 LAUNCHER | 🔓 EXTERNAL | 🔒 INTERNAL | 💉 INJECTOR |
-|:-----------:|:----------:|:----------:|:-----------:|
-| Premium GUI | Overlay ESP | DLL Injection | Manual Map |
-| Update Check | Direct Syscall | Shadow VMT Hook | Stealth |
-| One-Click Launch | Unlimited FPS | Zero Latency | No PEB Entry |
+| 🚀 LAUNCHER | 🌐 WEBSITE | 🔐 SERVER | 🎮 CHEATS |
+|:-----------:|:----------:|:---------:|:---------:|
+| ImGui GUI | Modern Design | Node.js + SQLite | External & Internal |
+| Auto-Update | Status Page | JWT Auth | Direct Syscall |
+| License System | Download | CI/CD Deploy | VMT Hooks |
 
 <br/>
 
-[📥 Download](#-сборка) • [📖 Features](#-функции) • [⚙️ Config](#-конфигурация) • [🔧 Build](#-сборка)
+[📚 Documentation](docs/) • [🚀 Quick Start](docs/QUICK_START.md) • [🏗️ Architecture](docs/ARCHITECTURE.md) • [🐛 Troubleshooting](docs/TROUBLESHOOTING.md)
 
 </div>
 
@@ -29,12 +29,11 @@
 
 ## 📋 Содержание
 
+- [📚 Документация](#-документация)
 - [🚀 Компоненты](#-компоненты)
+- [🌐 Launcher Server](#-launcher-server)
 - [🔓 EXTERNAL vs INTERNAL](#-external-vs-internal)
 - [🎯 Функции](#-функции)
-- [💾 Архитектура](#-архитектура)
-- [🎨 Меню](#-меню)
-- [⚙️ Конфигурация](#-конфигурация)
 - [🔧 Сборка](#-сборка)
 - [🎮 Использование](#-использование)
 - [📁 Структура проекта](#-структура-проекта)
@@ -42,22 +41,70 @@
 
 ---
 
+## 📚 Документация
+
+> 📖 **Полная документация проекта доступна в папке `/docs/`**
+
+### Основные документы:
+
+- **[📖 Обзор проекта](docs/PROJECT_STRUCTURE.md)** - структура кодовой базы, компоненты, версионирование
+- **[🏗️ Архитектура](docs/ARCHITECTURE.md)** - схемы потоков данных, API, база данных
+- **[🚀 Быстрый старт](docs/QUICK_START.md)** - для разработчиков, админов и пользователей
+- **[🐛 Решение проблем](docs/TROUBLESHOOTING.md)** - диагностика типичных ошибок
+- **[⚙️ GitHub Setup](docs/GITHUB_SETUP.md)** - настройка CI/CD
+- **[🔐 Admin Panel](docs/ADMIN_PANEL.md)** - управление лицензиями
+- **[🚀 Deployment](launcher-server/docs/DEPLOYMENT.md)** - развёртывание сервера
+
+---
+
 ## 🚀 Компоненты
 
-> 🎯 **4 компонента = полный пакет**
+> 🎯 **Полная экосистема: Launcher + Server + Website + Cheats**
 
-### 🚀 LAUNCHER (Рекомендуется)
+### 🚀 LAUNCHER (Premium GUI)
 
-Premium GUI менеджер для запуска чита.
+Современный GUI клиент с автообновлением и управлением лицензиями.
 
 ```
-✅ Современный UI с анимациями и эффектами
-✅ Выбор режима: External или Internal
-✅ Проверка обновлений игры (защита от краша)
-✅ Закруглённые углы (Windows 10/11 DWM API)
-✅ Рандомный заголовок окна (антидетект)
-✅ Автозакрытие после запуска
+✅ ImGui + DirectX 11 (премиум UI с градиентами)
+✅ Авторизация через сервер (JWT)
+✅ Система лицензий (lifetime, time-based)
+✅ Автообновление себя и читов (каждые 30 сек проверка)
+✅ Проверка статуса игр (operational/updating/offline)
+✅ HWID привязка (один аккаунт = одно устройство)
+✅ Защита (VM detection, debugger check)
+✅ Версия: 2.0.X (автоматическая через CI/CD)
 ```
+
+### 🌐 LAUNCHER SERVER (Backend + Website)
+
+Backend на Node.js с веб-интерфейсом.
+
+```
+✅ Node.js 18+ + Express + SQLite
+✅ REST API (JWT authentication)
+✅ Админ-панель (генерация ключей, управление статусом)
+✅ Шифрование файлов (AES-256-CBC)
+✅ Мониторинг CS2 обновлений (Telegram bot)
+✅ CI/CD интеграция (GitHub Actions → автозагрузка билдов)
+✅ Rate limiting (защита от DDoS)
+✅ Веб-сайт с дизайном и статусами игр
+✅ URL: http://single-project.duckdns.org
+```
+
+**API Endpoints:**
+- `GET /api/games/status` - статус игр и лаунчера
+- `POST /api/auth/login` - вход
+- `POST /api/auth/register` - регистрация
+- `POST /api/auth/activate` - активация лицензии
+- `GET /api/download/launcher` - скачать лаунчер
+- `GET /api/download/:game/external` - скачать чит
+- `POST /api/admin/licenses` - создать ключи (admin)
+- `POST /api/admin/ci/upload` - загрузка с GitHub Actions
+
+---
+
+### 🎮 Cheats (CS2)
 
 ### 🔓 EXTERNAL (Overlay ESP)
 
