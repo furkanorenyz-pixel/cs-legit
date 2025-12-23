@@ -21,6 +21,9 @@ const app = express();
 // Serve admin panel static files
 app.use('/panel', express.static(path.join(__dirname, '../../admin-panel')));
 
+// Serve public website (main page)
+app.use(express.static(path.join(__dirname, '../../public')));
+
 // ============================================
 // Middleware
 // ============================================
