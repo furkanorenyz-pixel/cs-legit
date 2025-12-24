@@ -1282,7 +1282,7 @@ void RenderRegister() {
         ImGui::Dummy(ImVec2(0, 6));
         
         ImGui::SetCursorPosX(x);
-        ImGui::TextColored(theme::textSec, "Username");
+        ImGui::TextColored(theme::textSec, "Username (min 3 characters)");
         ImGui::SetCursorPosX(x);
         ImGui::SetNextItemWidth(w);
         StyledInput("##ruser", g_username, sizeof(g_username));
@@ -1290,7 +1290,7 @@ void RenderRegister() {
         ImGui::Dummy(ImVec2(0, 6));
         
         ImGui::SetCursorPosX(x);
-        ImGui::TextColored(theme::textSec, "Password");
+        ImGui::TextColored(theme::textSec, "Password (min 6 characters)");
         ImGui::SetCursorPosX(x);
         ImGui::SetNextItemWidth(w);
         StyledInput("##rpass", g_password, sizeof(g_password), true);
@@ -2087,9 +2087,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         }
         
         // Auto-refresh data every 10 seconds (600 frames at 60fps)
-        // Auto-refresh status every 5 seconds (300 frames at 60fps)
+        // Auto-refresh status every 2 seconds (120 frames at 60fps) for near-instant updates
         static int statusRefreshCounter = 0;
-        if (g_currentScreen == Screen::Main && ++statusRefreshCounter > 300) {
+        if (g_currentScreen == Screen::Main && ++statusRefreshCounter > 120) {
             statusRefreshCounter = 0;
             FetchGameStatus();
             FetchUserLicenses();
