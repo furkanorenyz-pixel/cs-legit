@@ -509,52 +509,60 @@ void FetchUserLicenses() {
     }
 }
 
-// Fetch game status from server
+// Fetch game status from server - non-blocking, always runs
 void FetchGameStatus() {
-    if (g_statusRefreshing) return; // Avoid duplicate requests
+    // Skip only if already refreshing for more than 5 seconds
+    static auto lastRequestTime = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    
+    if (g_statusRefreshing) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastRequestTime).count();
+        if (elapsed < 5) return; // Still waiting for previous request
+        // Timeout - force reset
+        g_statusRefreshing = false;
+    }
+    
     g_statusRefreshing = true;
+    lastRequestTime = now;
     
     std::thread([]() {
         try {
             std::string response = HttpRequest("GET", "/api/games/status");
-            if (response.empty()) {
-                g_statusRefreshing = false;
-                return;
-            }
-            
-            // Parse status for CS2 (primary game)
-            size_t cs2Pos = response.find("\"cs2\":");
-            if (cs2Pos != std::string::npos) {
-                size_t statusPos = response.find("\"status\":\"", cs2Pos);
-                if (statusPos != std::string::npos) {
-                    statusPos += 10;
-                    size_t endPos = response.find("\"", statusPos);
-                    if (endPos != std::string::npos) {
-                        g_gameStatus = response.substr(statusPos, endPos - statusPos);
+            if (!response.empty()) {
+                // Parse status for CS2 (primary game)
+                size_t cs2Pos = response.find("\"cs2\":");
+                if (cs2Pos != std::string::npos) {
+                    size_t statusPos = response.find("\"status\":\"", cs2Pos);
+                    if (statusPos != std::string::npos) {
+                        statusPos += 10;
+                        size_t endPos = response.find("\"", statusPos);
+                        if (endPos != std::string::npos) {
+                            g_gameStatus = response.substr(statusPos, endPos - statusPos);
+                        }
+                    }
+                    
+                    size_t msgPos = response.find("\"message\":\"", cs2Pos);
+                    if (msgPos != std::string::npos) {
+                        msgPos += 11;
+                        size_t endPos = response.find("\"", msgPos);
+                        if (endPos != std::string::npos) {
+                            g_gameStatusMsg = response.substr(msgPos, endPos - msgPos);
+                        }
+                    }
+                    
+                    // Parse version
+                    size_t verPos = response.find("\"version\":\"", cs2Pos);
+                    if (verPos != std::string::npos) {
+                        verPos += 11;
+                        size_t endPos = response.find("\"", verPos);
+                        if (endPos != std::string::npos) {
+                            g_games[0].version = response.substr(verPos, endPos - verPos);
+                        }
                     }
                 }
                 
-                size_t msgPos = response.find("\"message\":\"", cs2Pos);
-                if (msgPos != std::string::npos) {
-                    msgPos += 11;
-                    size_t endPos = response.find("\"", msgPos);
-                    if (endPos != std::string::npos) {
-                        g_gameStatusMsg = response.substr(msgPos, endPos - msgPos);
-                    }
-                }
-                
-                // Parse version
-                size_t verPos = response.find("\"version\":\"", cs2Pos);
-                if (verPos != std::string::npos) {
-                    verPos += 11;
-                    size_t endPos = response.find("\"", verPos);
-                    if (endPos != std::string::npos) {
-                        g_games[0].version = response.substr(verPos, endPos - verPos);
-                    }
-                }
+                g_lastRefresh = std::chrono::steady_clock::now();
             }
-            
-            g_lastRefresh = std::chrono::steady_clock::now();
         } catch (...) {}
         
         g_statusRefreshing = false;
@@ -2088,11 +2096,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         }
         
         // Auto-refresh data every 10 seconds (600 frames at 60fps)
-        // Auto-refresh status every 2 seconds (120 frames at 60fps) for near-instant updates
+        // Auto-refresh status every 1 second (60 frames at 60fps) for instant updates
         static int statusRefreshCounter = 0;
-        if (g_currentScreen == Screen::Main && ++statusRefreshCounter > 120) {
+        if (g_currentScreen == Screen::Main && ++statusRefreshCounter > 60) {
             statusRefreshCounter = 0;
             FetchGameStatus();
+        }
+        
+        // Refresh licenses every 5 seconds
+        static int licenseRefreshCounter = 0;
+        if (g_currentScreen == Screen::Main && ++licenseRefreshCounter > 300) {
+            licenseRefreshCounter = 0;
             FetchUserLicenses();
         }
         
