@@ -32,13 +32,21 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-// Rate limiting
+// General rate limiting (generous for normal use)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
+    max: 500, // 500 requests per 15 min (enough for auto-refresh)
     message: { error: 'Too many requests, please try again later.' }
 });
 app.use(limiter);
+
+// Auth rate limiting (stricter to prevent brute force)
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes  
+    max: 30, // 30 auth attempts per 15 min
+    message: { error: 'Too many login attempts, please wait.' }
+});
+app.use('/api/auth/login', authLimiter);
 
 // Stricter limit for downloads
 const downloadLimiter = rateLimit({

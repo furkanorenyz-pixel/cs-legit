@@ -107,6 +107,7 @@ std::atomic<bool> g_cheatRunning{false};
 // Game status from server
 std::string g_gameStatus = "operational";
 std::string g_gameStatusMsg = "Working";
+std::atomic<bool> g_statusRefreshing{false};
 std::chrono::steady_clock::time_point g_lastRefresh;
 
 float g_animTimer = 0.0f;
@@ -505,12 +506,18 @@ void FetchUserLicenses() {
 
 // Fetch game status from server
 void FetchGameStatus() {
+    if (g_statusRefreshing) return; // Avoid duplicate requests
+    g_statusRefreshing = true;
+    
     std::thread([]() {
         try {
             std::string response = HttpRequest("GET", "/api/games/status");
-            if (response.empty()) return;
+            if (response.empty()) {
+                g_statusRefreshing = false;
+                return;
+            }
             
-            // Simple JSON parsing for status
+            // Parse status for CS2 (primary game)
             size_t cs2Pos = response.find("\"cs2\":");
             if (cs2Pos != std::string::npos) {
                 size_t statusPos = response.find("\"status\":\"", cs2Pos);
@@ -530,10 +537,22 @@ void FetchGameStatus() {
                         g_gameStatusMsg = response.substr(msgPos, endPos - msgPos);
                     }
                 }
+                
+                // Parse version
+                size_t verPos = response.find("\"version\":\"", cs2Pos);
+                if (verPos != std::string::npos) {
+                    verPos += 11;
+                    size_t endPos = response.find("\"", verPos);
+                    if (endPos != std::string::npos) {
+                        g_games[0].version = response.substr(verPos, endPos - verPos);
+                    }
+                }
             }
             
             g_lastRefresh = std::chrono::steady_clock::now();
         } catch (...) {}
+        
+        g_statusRefreshing = false;
     }).detach();
 }
 
@@ -1613,6 +1632,19 @@ void RenderMain() {
         
         ImGui::TextColored(statusCol, "%s", statusText);
         
+        // Show last refresh time or loading indicator
+        ImGui::SameLine();
+        if (g_statusRefreshing) {
+            // Animated loading dots
+            int dots = ((int)(g_animTimer * 3)) % 4;
+            const char* loadingText[] = {"   ", ".  ", ".. ", "..."};
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.3f, 1.0f), " syncing%s", loadingText[dots]);
+        } else {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - g_lastRefresh).count();
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.55f, 0.7f), " (%llds ago)", elapsed);
+        }
+        
         // ===== MAIN CARDS AREA =====
         float cardY = 90;
         float cardSpacing = 12;
@@ -2051,8 +2083,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         }
         
         // Auto-refresh data every 10 seconds (600 frames at 60fps)
+        // Auto-refresh status every 5 seconds (300 frames at 60fps)
         static int statusRefreshCounter = 0;
-        if (g_currentScreen == Screen::Main && ++statusRefreshCounter > 600) {
+        if (g_currentScreen == Screen::Main && ++statusRefreshCounter > 300) {
             statusRefreshCounter = 0;
             FetchGameStatus();
             FetchUserLicenses();
