@@ -56,9 +56,9 @@ bool g_bypassVM = false; // Set to true for development
 #define WINDOW_HEIGHT 500
 // Rebuild trigger v2
 
-// Primary: domain, Fallback: direct IP
-#define SERVER_HOST "single-project.duckdns.org"
-#define SERVER_HOST_FALLBACK "138.124.0.8"
+// Use direct IP for fast connection (Host header added for nginx)
+#define SERVER_HOST "138.124.0.8"
+#define SERVER_HOST_HEADER "single-project.duckdns.org"
 #define SERVER_PORT 80
 
 // ============================================
@@ -274,6 +274,7 @@ std::string HttpRequest(const std::string& method, const std::string& path, cons
     }
     
     std::string headers = "Content-Type: application/json\r\n";
+    headers += "Host: " SERVER_HOST_HEADER "\r\n"; // Required for nginx virtual host
     if (!g_token.empty()) headers += "Authorization: Bearer " + g_token + "\r\n";
     
     BOOL result = data.empty() 
