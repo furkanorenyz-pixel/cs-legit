@@ -56,9 +56,9 @@ target_link_libraries(launcher PRIVATE
     shell32
 )
 
-# Embed manifest for admin rights (required for auto-update)
+# Require admin rights for auto-update (UAC elevation)
 if(MSVC)
     set_target_properties(launcher PROPERTIES
-        LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/launcher.manifest"
+        LINK_FLAGS "/MANIFESTUAC:\"level='requireAdministrator' uiAccess='false'\""
     )
 endif()
