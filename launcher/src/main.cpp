@@ -484,8 +484,9 @@ void ApplyUpdate() {
         bat << "del \"%~f0\"\n";
         bat.close();
         
-        // Run updater and exit
+        // Run updater and exit (give bat time to start)
         ShellExecuteA(NULL, "open", updaterBat.c_str(), NULL, NULL, SW_HIDE);
+        Sleep(500); // Wait for bat to start
         ExitProcess(0);
     }
 }

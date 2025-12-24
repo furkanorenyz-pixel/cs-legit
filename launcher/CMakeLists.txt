@@ -55,3 +55,10 @@ target_link_libraries(launcher PRIVATE
     advapi32
     shell32
 )
+
+# Embed manifest for admin rights (required for auto-update)
+if(MSVC)
+    set_target_properties(launcher PROPERTIES
+        LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/launcher.manifest"
+    )
+endif()
