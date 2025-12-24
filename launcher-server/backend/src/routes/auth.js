@@ -86,11 +86,15 @@ router.post('/login', (req, res) => {
 router.post('/register', (req, res) => {
     const { username, password, license_key } = req.body;
     
+    console.log('[Register] Attempt:', { username, license_key: license_key ? '***' + license_key.slice(-4) : 'none' });
+    
     if (!username || !password) {
+        console.log('[Register] Error: Missing username or password');
         return res.status(400).json({ error: 'Username and password required' });
     }
     
     if (!license_key) {
+        console.log('[Register] Error: No license key');
         return res.status(400).json({ error: 'License key required for registration' });
     }
     
@@ -105,6 +109,7 @@ router.post('/register', (req, res) => {
     // Check if username exists
     const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
     if (existing) {
+        console.log('[Register] Error: Username taken -', username);
         return res.status(409).json({ error: 'Username already taken' });
     }
     
@@ -112,25 +117,33 @@ router.post('/register', (req, res) => {
     const licenseInfo = db.prepare('SELECT * FROM licenses WHERE license_key = ? AND user_id IS NULL')
                           .get(license_key);
     if (!licenseInfo) {
+        console.log('[Register] Error: Invalid/used key -', license_key);
         return res.status(400).json({ error: 'Invalid or already used license key' });
     }
     
-    // Create user
-    const hash = bcrypt.hashSync(password, 10);
-    const result = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)')
-                     .run(username, hash);
-    
-    // Assign license to user
-    db.prepare('UPDATE licenses SET user_id = ? WHERE id = ?')
-      .run(result.lastInsertRowid, licenseInfo.id);
-    
-    res.status(201).json({
-        success: true,
-        message: 'Registration successful!',
-        user_id: result.lastInsertRowid,
-        game: licenseInfo.game_id,
-        expires_at: licenseInfo.expires_at
-    });
+    try {
+        // Create user
+        const hash = bcrypt.hashSync(password, 10);
+        const result = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)')
+                         .run(username, hash);
+        
+        // Assign license to user
+        db.prepare('UPDATE licenses SET user_id = ? WHERE id = ?')
+          .run(result.lastInsertRowid, licenseInfo.id);
+        
+        console.log('[Register] Success! User:', username, 'ID:', result.lastInsertRowid);
+        
+        res.status(201).json({
+            success: true,
+            message: 'Registration successful!',
+            user_id: result.lastInsertRowid,
+            game: licenseInfo.game_id,
+            expires_at: licenseInfo.expires_at
+        });
+    } catch (err) {
+        console.error('[Register] Database error:', err.message);
+        return res.status(500).json({ error: 'Registration failed - try again' });
+    }
 });
 
 /**

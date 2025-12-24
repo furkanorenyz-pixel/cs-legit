@@ -56,7 +56,9 @@ bool g_bypassVM = false; // Set to true for development
 #define WINDOW_HEIGHT 500
 // Rebuild trigger v2
 
+// Primary: domain, Fallback: direct IP
 #define SERVER_HOST "single-project.duckdns.org"
+#define SERVER_HOST_FALLBACK "138.124.0.8"
 #define SERVER_PORT 80
 
 // ============================================
@@ -246,11 +248,13 @@ std::string HttpRequest(const std::string& method, const std::string& path, cons
         return "";
     }
     
-    // Set timeouts (5 seconds connect, 10 seconds receive)
-    DWORD connectTimeout = 5000;
-    DWORD receiveTimeout = 10000;
+    // Set aggressive timeouts (3 seconds connect, 5 seconds receive)
+    DWORD connectTimeout = 3000;
+    DWORD receiveTimeout = 5000;
+    DWORD sendTimeout = 3000;
     InternetSetOptionA(hInternet, INTERNET_OPTION_CONNECT_TIMEOUT, &connectTimeout, sizeof(connectTimeout));
     InternetSetOptionA(hInternet, INTERNET_OPTION_RECEIVE_TIMEOUT, &receiveTimeout, sizeof(receiveTimeout));
+    InternetSetOptionA(hInternet, INTERNET_OPTION_SEND_TIMEOUT, &sendTimeout, sizeof(sendTimeout));
     
     HINTERNET hConnect = InternetConnectA(hInternet, SERVER_HOST, SERVER_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConnect) {
@@ -672,8 +676,8 @@ void DoRegister() {
         return;
     }
     
-    if (strlen(g_password) < 4 || strlen(g_password) > 64) {
-        g_errorMsg = "Password: 4-64 characters";
+    if (strlen(g_password) < 6 || strlen(g_password) > 64) {
+        g_errorMsg = "Password: 6-64 characters";
         return;
     }
     

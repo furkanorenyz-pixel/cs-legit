@@ -32,33 +32,10 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-// General rate limiting (generous for normal use)
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 500, // 500 requests per 15 min (enough for auto-refresh)
-    message: { error: 'Too many requests, please try again later.' }
-});
-app.use(limiter);
-
-// Auth rate limiting (stricter to prevent brute force)
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes  
-    max: 30, // 30 auth attempts per 15 min
-    message: { error: 'Too many login attempts, please wait.' }
-});
-app.use('/api/auth/login', authLimiter);
-
-// Stricter limit for downloads
-const downloadLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    max: 1000, // Increased limit for updates/testing
-    message: { error: 'Download limit exceeded.' },
-    skip: (req) => {
-        // Skip rate limit for launcher updates to allow auto-updates
-        return req.path === '/launcher';
-    }
-});
-app.use('/api/download', downloadLimiter);
+// Rate limiting DISABLED for now - causing registration issues
+// TODO: Re-enable with proper configuration after testing
+// const limiter = rateLimit({ ... });
+// app.use(limiter);
 
 // ============================================
 // Routes
