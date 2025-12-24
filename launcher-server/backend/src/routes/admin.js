@@ -113,6 +113,25 @@ router.post('/ci/upload', verifyCiApiKey, upload.single('file'), (req, res) => {
         db.prepare('UPDATE games SET latest_version = ? WHERE id = ?')
           .run(version, game_id);
         
+        // Delete old versions (keep only the latest)
+        const gameDir = path.join(STORAGE_PATH, 'games', game_id);
+        if (fs.existsSync(gameDir)) {
+            const files = fs.readdirSync(gameDir).filter(f => f.endsWith('.enc'));
+            const latestFile = path.basename(encryptedPath);
+            
+            files.forEach(file => {
+                if (file !== latestFile) {
+                    const oldPath = path.join(gameDir, file);
+                    try {
+                        fs.unlinkSync(oldPath);
+                        console.log(`[CI] Deleted old version: ${file}`);
+                    } catch (e) {
+                        console.error(`[CI] Failed to delete ${file}:`, e.message);
+                    }
+                }
+            });
+        }
+        
         console.log(`[CI] Uploaded ${game_id} v${version} (${commit_sha || 'no-sha'})`);
         
         res.status(201).json({
