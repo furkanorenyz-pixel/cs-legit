@@ -63,7 +63,7 @@ jobs:
         Write-Host "   CS-LEGIT LAUNCHER v${{ env.VERSION }}"
         Write-Host "=========================================="
         
-        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLAUNCHER_VERSION=${{ env.VERSION }}
+        cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLAUNCHER_VERSION="${{ env.VERSION }}"
 
     - name: 🔨 Build
       working-directory: launcher
