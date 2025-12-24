@@ -2,6 +2,7 @@
  * Database Migration Script
  */
 
+require('dotenv').config();
 const db = require('./db');
 const bcrypt = require('bcryptjs');
 
